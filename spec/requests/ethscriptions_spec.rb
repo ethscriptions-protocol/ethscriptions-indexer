@@ -122,15 +122,32 @@ RSpec.describe 'Ethscriptions API', doc: true do
     get 'Show Ethscription Data' do
       tags 'Ethscriptions'
       operationId 'getEthscriptionData'
-      produces 'application/octet-stream', 'image/png', 'text/plain'
-      description 'Retrieves the raw content data of an ethscription and serves it according to its content type.'
+      produces 'application/octet-stream', 'image/png', 'text/plain', 'application/json'
+      description <<~DESC
+        Retrieves the raw content data of an ethscription and serves it according to its content type.
+        
+        This endpoint supports both single and multiple ethscription data retrieval:
+        - Single ID: Returns raw binary data with appropriate content type
+        - Multiple IDs: Returns JSON with base64-encoded data for each ID
+        
+        Multiple IDs can be provided by:
+        - Comma-separated values in the path: /ethscriptions/0,1,2/data
+        - Query parameter: /ethscriptions/data?ids[]=0&ids[]=1&ids[]=2
+      DESC
       
       parameter name: :tx_hash_or_ethscription_number,
                 in: :path,
                 type: :string,
-                description: 'The ethscription number or transaction hash to retrieve data for.',
+                description: 'The ethscription number, transaction hash, or comma-separated list of IDs to retrieve data for.',
                 required: true,
                 example: "0"
+
+      parameter name: :ids,
+                in: :query,
+                type: :array,
+                items: { type: :string },
+                description: 'Array of ethscription IDs when using query parameter approach.',
+                required: false
 
       response '200', 'Data retrieved successfully' do
         header 'Content-Type', description: 'The MIME type of the data.', schema: { type: :string }

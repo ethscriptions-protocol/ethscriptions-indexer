@@ -111,9 +111,18 @@ class EthscriptionsController < ApplicationController
   end
   
   def data
+    # Handle multiple IDs if provided as comma-separated values or array
+    ids_param = params[:id].to_s
+    
+    if ids_param.include?(',') || params[:ids].present? || (ids_param.empty? && params[:ids].present?)
+      # Multiple IDs provided - delegate to multi handling
+      return data_multi_response
+    end
+    
+    # Single ID handling (existing logic)
     scope = Ethscription.all
     
-    id_or_hash = params[:id].to_s.downcase
+    id_or_hash = ids_param.downcase
     
     scope = id_or_hash.match?(/\A0x[0-9a-f]{64}\z/) ? 
       scope.where(transaction_hash: id_or_hash) : 
@@ -143,7 +152,20 @@ class EthscriptionsController < ApplicationController
   end
   
   def data_multi
-    ids = Array.wrap(params[:ids]).map(&:to_s).map(&:downcase).uniq
+    data_multi_response
+  end
+  
+  private
+  
+  def data_multi_response
+    # Get IDs from either comma-separated string or array parameter
+    ids = if params[:id].to_s.include?(',')
+      params[:id].to_s.split(',')
+    else
+      Array.wrap(params[:ids] || params[:id])
+    end
+    
+    ids = ids.map(&:to_s).map(&:strip).map(&:downcase).reject(&:empty?).uniq
     
     if ids.empty?
       render json: { error: "No IDs provided" }, status: 400

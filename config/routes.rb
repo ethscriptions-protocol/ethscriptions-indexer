@@ -3,6 +3,7 @@ Rails.application.routes.draw do
     resources :ethscriptions, only: [:index, :show] do
       collection do
         get "/:id/data", to: "ethscriptions#data"
+        get "/data", to: "ethscriptions#data"  # For handling ?ids= parameter
         post "/data_multi", to: "ethscriptions#data_multi"
         # get "/newer_ethscriptions", to: "ethscriptions#newer_ethscriptions"
         # get "/newer", to: "ethscriptions#newer_ethscriptions"

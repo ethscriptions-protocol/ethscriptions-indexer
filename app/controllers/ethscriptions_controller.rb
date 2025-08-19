@@ -1,3 +1,5 @@
+require 'base64'
+
 class EthscriptionsController < ApplicationController
   cache_actions_on_block only: [:index, :show, :newer_ethscriptions]
   
@@ -138,6 +140,68 @@ class EthscriptionsController < ApplicationController
       
       send_data(uri_obj.decoded_data, type: uri_obj.mimetype, disposition: 'inline')
     end
+  end
+  
+  def data_multi
+    ids = Array.wrap(params[:ids]).map(&:to_s).map(&:downcase).uniq
+    
+    if ids.empty?
+      render json: { error: "No IDs provided" }, status: 400
+      return
+    end
+    
+    if ids.size > 100
+      render json: { error: "Too many IDs (maximum 100)" }, status: 400
+      return
+    end
+    
+    result = Rails.cache.fetch(["ethscription-api-data-multi", ids], expires_in: 12.seconds) do
+      # Separate hash and number lookups
+      hashes = ids.select { |id| id.match?(/\A0x[0-9a-f]{64}\z/) }
+      numbers = ids.reject { |id| id.match?(/\A0x[0-9a-f]{64}\z/) }
+      
+      ethscriptions = []
+      
+      # Look up by transaction hash
+      if hashes.any?
+        ethscriptions.concat(Ethscription.where(transaction_hash: hashes))
+      end
+      
+      # Look up by ethscription number
+      if numbers.any?
+        ethscriptions.concat(Ethscription.where(ethscription_number: numbers))
+      end
+      
+      # Build result hash
+      result_data = {}
+      
+      ids.each do |id|
+        ethscription = ethscriptions.find do |e|
+          (id.match?(/\A0x[0-9a-f]{64}\z/) && e.transaction_hash == id) ||
+          (!id.match?(/\A0x[0-9a-f]{64}\z/) && e.ethscription_number.to_s == id)
+        end
+        
+        if ethscription
+          uri_obj = ethscription.parsed_data_uri
+          if uri_obj
+            result_data[id] = {
+              data: Base64.strict_encode64(uri_obj.decoded_data),
+              mimetype: uri_obj.mimetype,
+              ethscription_number: ethscription.ethscription_number,
+              transaction_hash: ethscription.transaction_hash
+            }
+          else
+            result_data[id] = nil
+          end
+        else
+          result_data[id] = nil
+        end
+      end
+      
+      result_data
+    end
+    
+    render json: { result: result }
   end
   
   def attachment

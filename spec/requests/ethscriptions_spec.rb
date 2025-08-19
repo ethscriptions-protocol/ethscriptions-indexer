@@ -284,6 +284,64 @@ RSpec.describe 'Ethscriptions API', doc: true do
       end
     end
   end
+  
+  path '/ethscriptions/data_multi' do
+    post 'Get Multiple Ethscription Data' do
+      tags 'Ethscriptions'
+      operationId 'getMultipleEthscriptionData'
+      consumes 'application/json'
+      produces 'application/json'
+      description <<~DESC
+        Accepts a list of ethscription IDs (transaction hashes or ethscription numbers) and returns the data for each. Returns a mapping from IDs to their corresponding data objects, if found; otherwise maps to `null`. Max input: 100 IDs.
+      DESC
+
+      parameter name: :ids, in: :body, schema: {
+        type: :object,
+        properties: {
+          ids: { 
+            type: :array, 
+            items: { type: :string },
+            description: 'An array of ethscription IDs (transaction hashes or ethscription numbers) to retrieve data for.',
+            example: ['0', '0x0ef100873db4e3b7446e9a3be0432ab8bc92119d009aa200f70c210ac9dcd4a6']
+          }
+        },
+        required: ['ids']
+      }
+      
+      response '200', 'Data retrieved successfully' do
+        schema type: :object,
+               properties: {
+                 result: {
+                   type: :object,
+                   additionalProperties: {
+                     type: :object,
+                     nullable: true,
+                     properties: {
+                       data: { type: :string, description: 'Base64 encoded data' },
+                       mimetype: { type: :string, description: 'MIME type of the data' },
+                       ethscription_number: { type: :string, description: 'Ethscription number' },
+                       transaction_hash: { type: :string, description: 'Transaction hash' }
+                     },
+                     description: 'Data object for the ethscription. Null if the ethscription does not exist.'
+                   },
+                   description: 'Mapping from ethscription IDs to their corresponding data objects or null if not found.'
+                 }
+               },
+               description: 'Successfully returns a mapping from provided IDs to their corresponding data objects or null if not found.'
+
+        run_test!
+      end
+      
+      response '400', 'Bad request' do
+        schema type: :object,
+               properties: {
+                 error: { type: :string, example: 'No IDs provided' }
+               },
+               description: 'Error response indicating bad request (no IDs provided or too many IDs).'
+      end
+    end
+  end
+  
   path '/ethscriptions/newer' do
     get 'List Newer Ethscriptions' do
       tags 'Ethscriptions'

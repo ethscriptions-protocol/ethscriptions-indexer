@@ -120,11 +120,24 @@ class EthscriptionsController < ApplicationController
     blockhash, block_number = scope.pick(:block_blockhash, :block_number)
     
     unless blockhash.present?
+      # Ensure CORS headers are set even for 404 responses
+      if request.headers['Origin']
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
+      end
       head 404
       return
     end
     
     response.headers.delete('X-Frame-Options')
+    
+    # Ensure CORS headers are set for cross-origin requests
+    if request.headers['Origin']
+      response.headers['Access-Control-Allow-Origin'] = '*'
+      response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+      response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
+    end
     
     set_cache_control_headers(
       max_age: 6,
@@ -138,6 +151,16 @@ class EthscriptionsController < ApplicationController
       
       send_data(uri_obj.decoded_data, type: uri_obj.mimetype, disposition: 'inline')
     end
+  end
+  
+  def data_options
+    # Handle CORS preflight requests for the data endpoint
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    
+    head :ok
   end
   
   def attachment

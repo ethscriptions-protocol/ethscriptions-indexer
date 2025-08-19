@@ -248,35 +248,6 @@ class EthscriptionsController < ApplicationController
       return
     end
     
-    if client_past_ethscriptions_count && past_ethscriptions_checksum.blank?
-      our_past_count = scope.where('block_number < ?', requested_block_number).count
-    
-      if our_past_count != client_past_ethscriptions_count.to_i
-        render json: {
-          error: {
-            message: "Count is off",
-            resolution: :reindex
-          }
-        }, status: :unprocessable_entity
-        return
-      end
-    end
-    
-    if past_ethscriptions_checksum.present?
-      checksum_scope = scope.where("block_number < ?", requested_block_number)
-      our_checksum = Ethscription.scope_checksum(checksum_scope)
-      
-      if our_checksum != past_ethscriptions_checksum
-        render json: {
-          error: {
-            message: "Invalid Checksum",
-            resolution: :reindex
-          }
-        }, status: :unprocessable_entity
-        return
-      end
-    end
-    
     last_ethscription_block = scope.where('block_number >= ? AND block_number < ?', 
                                 requested_block_number, 
                                 requested_block_number + max_blocks)

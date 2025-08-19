@@ -3,8 +3,8 @@ Rails.application.routes.draw do
     resources :ethscriptions, only: [:index, :show] do
       collection do
         get "/:id/data", to: "ethscriptions#data"
-        get "/newer_ethscriptions", to: "ethscriptions#newer_ethscriptions"
-        get "/newer", to: "ethscriptions#newer_ethscriptions"
+        # get "/newer_ethscriptions", to: "ethscriptions#newer_ethscriptions"
+        # get "/newer", to: "ethscriptions#newer_ethscriptions"
         get '/owned_by/:owned_by_address', to: 'ethscriptions#index'
         get "/exists/:sha", to: "ethscriptions#exists"
         post "/exists_multi", to: "ethscriptions#exists_multi"

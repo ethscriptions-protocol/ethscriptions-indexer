@@ -125,6 +125,7 @@ class EthscriptionsController < ApplicationController
         response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
       end
       head 404
       return
@@ -137,6 +138,7 @@ class EthscriptionsController < ApplicationController
       response.headers['Access-Control-Allow-Origin'] = '*'
       response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
       response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
+      response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
     end
     
     set_cache_control_headers(
@@ -159,6 +161,7 @@ class EthscriptionsController < ApplicationController
     response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
     response.headers['Access-Control-Max-Age'] = '3600'
+    response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
     
     head :ok
   end
@@ -177,11 +180,26 @@ class EthscriptionsController < ApplicationController
     attachment_scope = EthscriptionAttachment.where(sha: sha)
     
     unless attachment_scope.exists?
+      # Ensure CORS headers are set even for 404 responses
+      if request.headers['Origin']
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+      end
       head 404
       return
     end
     
     response.headers.delete('X-Frame-Options')
+    
+    # Ensure CORS headers are set for cross-origin requests
+    if request.headers['Origin']
+      response.headers['Access-Control-Allow-Origin'] = '*'
+      response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+      response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
+      response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+    end
     
     set_cache_control_headers(
       max_age: 6,
@@ -193,6 +211,17 @@ class EthscriptionsController < ApplicationController
       
       send_data(attachment.content, type: attachment.content_type_with_encoding, disposition: 'inline')    
     end
+  end
+  
+  def attachment_options
+    # Handle CORS preflight requests for the attachment endpoint
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+    
+    head :ok
   end
   
   def exists

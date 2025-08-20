@@ -13,6 +13,7 @@ Rails.application.routes.draw do
       
       member do
         get 'attachment', to: 'ethscriptions#attachment'
+        match 'attachment', to: 'ethscriptions#attachment_options', via: :options
       end
     end
     

@@ -1,6 +1,6 @@
 # Welcome to the official Open Source Ethscriptions Indexer!
 
-This indexer has been extracted and streamlined from the indexer that runs Ethscriptions.com. This indexer has been validated as producing the same results against the live Ethscriptions.com indexer. This indexer also powers Facet!
+This indexer has been extracted and streamlined from the indexer that runs Ethscriptions.com. This indexer has been validated as producing the same results against the live Ethscriptions.com indexer.
 
 ## Important: When pulling changes!
 
@@ -13,7 +13,7 @@ This is a Ruby on Rails app.
 Run this command inside the directory of your choice to clone the repository:
 
 ```!bash
-git clone https://github.com/0xfacet/ethscriptions-indexer
+git clone https://github.com/ethscriptions-protocol/ethscriptions-indexer
 ```
 
 If you don't already have Ruby Version Manager installed, install it:

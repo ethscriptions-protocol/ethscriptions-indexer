@@ -64,14 +64,19 @@ module BlobUtils
       sections = hex_blob.scan(/.{64}/m)
       
       last_non_empty_section_index = sections.rindex { |section| section != '00' * 32 }
-      non_empty_sections = sections.take(last_non_empty_section_index + 1)
       
-      last_non_empty_section = non_empty_sections.last
-      
-      if last_non_empty_section == "0080" + "00" * 30
-        non_empty_sections.pop
+      if last_non_empty_section_index.nil?
+        non_empty_sections = []
       else
-        last_non_empty_section.gsub!(/80(00)*\z/, '')
+        non_empty_sections = sections.take(last_non_empty_section_index + 1)
+        
+        last_non_empty_section = non_empty_sections.last
+        
+        if last_non_empty_section == "0080" + "00" * 30
+          non_empty_sections.pop
+        else
+          last_non_empty_section.gsub!(/80(00)*\z/, '')
+        end
       end
       
       non_empty_sections = non_empty_sections.map do |section|

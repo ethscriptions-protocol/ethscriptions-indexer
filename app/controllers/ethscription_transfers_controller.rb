@@ -5,7 +5,12 @@ class EthscriptionTransfersController < ApplicationController
     scope = filter_by_params(EthscriptionTransfer.all,
       :from_address,
       :to_address,
-      :transaction_hash
+      :transaction_hash,
+      :block_number,
+      :block_timestamp,
+      :block_blockhash,
+      :ethscription_transaction_hash,
+      :enforced_previous_owner
     )
     
     to_or_from = parse_param_array(params[:to_or_from])

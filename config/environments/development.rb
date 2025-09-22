@@ -16,7 +16,7 @@ Rails.application.configure do
 
   # Enable server timing
   config.server_timing = true
-
+  
   # Enable/disable caching. By default caching is disabled.
   # Run rails dev:cache to toggle caching.
   if Rails.root.join("tmp/caching-dev.txt").exist?
@@ -38,7 +38,10 @@ Rails.application.configure do
     config.cache_store = :null_store
   end
   
-  config.logger = ActiveSupport::Logger.new('/dev/null')
+  # Output logger to STDOUT for development
+  config.logger = ActiveSupport::Logger.new(STDOUT)
+  config.logger.formatter = Logger::Formatter.new
+  config.log_level = :info
 
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
@@ -50,15 +53,15 @@ Rails.application.configure do
   config.active_support.disallowed_deprecation_warnings = []
 
   # Raise an error on page load if there are pending migrations.
-  config.active_record.migration_error = :page_load
+  # config.active_record.migration_error = :page_load
 
   # Highlight code that triggered database queries in logs.
-  config.active_record.verbose_query_logs = true
+  # config.active_record.verbose_query_logs = true
 
   # Highlight code that enqueued background job in logs.
   config.active_job.verbose_enqueue_logs = true
 
-  config.active_record.async_query_executor = :global_thread_pool
+  # config.active_record.async_query_executor = :global_thread_pool
 
   # Raises error for missing translations.
   # config.i18n.raise_on_missing_translations = true

@@ -1,0 +1,43 @@
+services:
+  geth:
+    image: ghcr.io/ethscriptions-protocol/ethscriptions-geth:ethscriptions
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      GENESIS_FILE: ${GENESIS_FILE}
+      GENESIS_TIMESTAMP: ${GENESIS_TIMESTAMP:-}
+      GENESIS_MIX_HASH: ${GENESIS_MIX_HASH:-}
+      RPC_GAS_CAP: ${RPC_GAS_CAP:-500000000}
+    volumes:
+      - geth-data:/root/ethereum
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: ["CMD-SHELL", "geth attach --exec 'eth.blockNumber' http://localhost:8545"]
+      interval: 30s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  node:
+    image: ghcr.io/ethscriptions-protocol/ethscriptions-node:evm-backend-demo
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      L1_NETWORK: ${L1_NETWORK}
+      GETH_RPC_URL: http://geth:8551
+      NON_AUTH_GETH_RPC_URL: http://geth:8545
+      L1_RPC_URL: ${L1_RPC_URL}
+      L1_GENESIS_BLOCK: ${L1_GENESIS_BLOCK}
+      BLOCK_IMPORT_BATCH_SIZE: ${BLOCK_IMPORT_BATCH_SIZE:-5}
+      L1_PREFETCH_FORWARD: ${L1_PREFETCH_FORWARD:-200}
+      L1_PREFETCH_THREADS: ${L1_PREFETCH_THREADS:-10}
+      VALIDATE_IMPORT: ${VALIDATE_IMPORT:-false}
+      VALIDATION_THREADS: ${VALIDATION_THREADS:-10}
+      STORAGE_VERIFICATION_THREADS: ${STORAGE_VERIFICATION_THREADS:-10}
+      PROFILE_IMPORT: ${PROFILE_IMPORT:-false}
+      ETHSCRIPTIONS_API_BASE_URL: ${ETHSCRIPTIONS_API_BASE_URL-''}
+    depends_on:
+      geth:
+        condition: service_healthy
+
+volumes:
+  geth-data:

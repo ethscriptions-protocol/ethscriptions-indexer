@@ -1,0 +1,40 @@
+[profile.default]
+src = "src"
+out = "forge-artifacts"
+libs = ["dependencies"]
+solc = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+# via_ir = true
+remappings = [
+    "@openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.3.0/",
+    "@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.3.0/",
+    "solady/=dependencies/solady-0.1.26/src/",
+    "forge-std/=dependencies/forge-std-1.10.0/src/",
+    "@eth-optimism/contracts-bedrock/=dependencies/@eth-optimism-contracts-bedrock-0.17.3/"
+]
+
+# Allow tests to read JSON fixtures from the test directory
+fs_permissions = [
+    { access = "read", path = "./test" },
+    { access = "read", path = "./script" }
+]
+ffi = true
+
+[dependencies]
+solady = "0.1.26"
+forge-std = "1.10.0"
+"@openzeppelin-contracts" = "5.3.0"
+"@openzeppelin-contracts-upgradeable" = "5.3.0"
+"@eth-optimism-contracts-bedrock" = "0.17.3"
+
+[lint]
+exclude_lints = [
+  "unaliased-plain-import",
+  "pascal-case-struct",
+  "mixed-case-variable",
+  "mixed-case-function",
+  "screaming-snake-case-const",
+  "erc20-unchecked-transfer",
+  "asm-keccak256"
+]

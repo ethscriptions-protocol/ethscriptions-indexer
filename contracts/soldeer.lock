@@ -1,0 +1,34 @@
+[[dependencies]]
+name = "@eth-optimism-contracts-bedrock"
+version = "0.17.3"
+url = "https://soldeer-revisions.s3.amazonaws.com/@eth-optimism-contracts-bedrock/0_17_3_06-06-2024_05:37:28_contracts-bedrock.zip"
+checksum = "cd0264f2f2c9f0278f7f8259f4a2b230897262afe14eb8baef996274e53c23db"
+integrity = "7646fa5b18fa27ac5e3de58996a778e2e3675a8d24d3fbf59a889f7397570a73"
+
+[[dependencies]]
+name = "@openzeppelin-contracts"
+version = "5.3.0"
+url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts/5_3_0_10-04-2025_10:51:50_contracts.zip"
+checksum = "fa2bc3db351137c4d5eb32b738a814a541b78e87fbcbfeca825e189c4c787153"
+integrity = "d69addf252dfe0688dcd893a7821cbee2421f8ce53d95ca0845a59530043cfd1"
+
+[[dependencies]]
+name = "@openzeppelin-contracts-upgradeable"
+version = "5.3.0"
+url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts-upgradeable/5_3_0_10-04-2025_10:51:56_contracts-upgradeable.zip"
+checksum = "4bd92f87af0cac7226b12ce367e7327f13431735fa6010508d8c8177f9d3d10f"
+integrity = "fa195a69ef4dfec7fec7fbbb77f424258c821832fdd355b0a6e5fe34d2986a16"
+
+[[dependencies]]
+name = "forge-std"
+version = "1.10.0"
+url = "https://soldeer-revisions.s3.amazonaws.com/forge-std/1_10_0_02-08-2025_06:50:35_forge-std-1.10.zip"
+checksum = "8cc59e92a7762c170c15f2102c4f3718106dfc78239978fe87c64f316740cc09"
+integrity = "3fd441e2499c5cf04ef9b4126f52150a50dcef9cac1645ff7a955345e947cd04"
+
+[[dependencies]]
+name = "solady"
+version = "0.1.26"
+url = "https://soldeer-revisions.s3.amazonaws.com/solady/0_1_26_25-08-2025_15:30:06_solady.zip"
+checksum = "9872ac7cfd32c1eba32800508a1325c49f4a4aa8c6f670454db91971a583e26b"
+integrity = "5da4b5ca9cbad98812a4b75ad528ff34c72a0b84433204be6d1420c81de1d6ff"

@@ -5,24 +5,25 @@ databases:
 services:
   - name: memcached
     type: pserv
-    env: docker
+    runtime: docker
     plan: starter
-    image: memcached:1.6-alpine
-    ports:
-      - port: 11211
-        protocol: tcp
+    image:
+      url: memcached:1.6-alpine
     autoDeploy: false
 
   - name: ethscriptions-api
     type: web
-    env: ruby
-    rubyVersion: 3.2.2
+    runtime: ruby
     plan: starter
     buildCommand: "bundle install"
+    preDeployCommand: "bundle exec rake db:migrate"
     startCommand: "bundle exec puma -C config/puma.rb"
     healthCheckPath: "/up"
-    postDeployCommand: "bundle exec rake db:migrate"
     envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ethscriptions-db
+          property: connectionString
       - key: RAILS_ENV
         value: production
       - key: WEB_CONCURRENCY
@@ -47,17 +48,18 @@ services:
         value: "2"
       - key: TESTNET_START_BLOCK
         sync: false
-    databases:
-      - name: ethscriptions-db
 
   - name: ethscriptions-indexer
     type: worker
-    env: ruby
-    rubyVersion: 3.2.2
+    runtime: ruby
     plan: starter
     buildCommand: "bundle install"
     startCommand: "bundle exec clockwork config/main_importer_clock.rb"
     envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ethscriptions-db
+          property: connectionString
       - key: RAILS_ENV
         value: production
       - key: MEMCACHIER_SERVERS
@@ -78,5 +80,3 @@ services:
         value: "2"
       - key: TESTNET_START_BLOCK
         sync: false
-    databases:
-      - name: ethscriptions-db

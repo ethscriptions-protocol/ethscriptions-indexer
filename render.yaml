@@ -1,3 +1,5 @@
+version: "1"
+
 databases:
   - name: ethscriptions-db
     plan: basic-1gb

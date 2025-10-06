@@ -1,0 +1,82 @@
+databases:
+  - name: ethscriptions-db
+    plan: standard
+
+services:
+  - name: memcached
+    type: pserv
+    env: docker
+    plan: starter
+    image: memcached:1.6-alpine
+    ports:
+      - port: 11211
+        protocol: tcp
+    autoDeploy: false
+
+  - name: ethscriptions-api
+    type: web
+    env: ruby
+    rubyVersion: 3.2.2
+    plan: starter
+    buildCommand: "bundle install"
+    startCommand: "bundle exec puma -C config/puma.rb"
+    healthCheckPath: "/up"
+    postDeployCommand: "bundle exec rake db:migrate"
+    envVars:
+      - key: RAILS_ENV
+        value: production
+      - key: WEB_CONCURRENCY
+        value: "2"
+      - key: RAILS_MAX_THREADS
+        value: "5"
+      - key: MEMCACHIER_SERVERS
+        value: memcached:11211
+      - key: ETHEREUM_CLIENT_CLASS
+        value: AlchemyClient
+      - key: ETHEREUM_CLIENT_BASE_URL
+        value: https://eth-mainnet.g.alchemy.com/v2
+      - key: ETHEREUM_CLIENT_API_KEY
+        sync: false
+      - key: ETHEREUM_BEACON_NODE_API_BASE_URL
+        sync: false
+      - key: ETHEREUM_BEACON_NODE_API_KEY
+        sync: false
+      - key: ETHEREUM_NETWORK
+        value: eth-mainnet
+      - key: BLOCK_IMPORT_BATCH_SIZE
+        value: "2"
+      - key: TESTNET_START_BLOCK
+        sync: false
+    databases:
+      - name: ethscriptions-db
+
+  - name: ethscriptions-indexer
+    type: worker
+    env: ruby
+    rubyVersion: 3.2.2
+    plan: starter
+    buildCommand: "bundle install"
+    startCommand: "bundle exec clockwork config/main_importer_clock.rb"
+    envVars:
+      - key: RAILS_ENV
+        value: production
+      - key: MEMCACHIER_SERVERS
+        value: memcached:11211
+      - key: ETHEREUM_CLIENT_CLASS
+        value: AlchemyClient
+      - key: ETHEREUM_CLIENT_BASE_URL
+        value: https://eth-mainnet.g.alchemy.com/v2
+      - key: ETHEREUM_CLIENT_API_KEY
+        sync: false
+      - key: ETHEREUM_BEACON_NODE_API_BASE_URL
+        sync: false
+      - key: ETHEREUM_BEACON_NODE_API_KEY
+        sync: false
+      - key: ETHEREUM_NETWORK
+        value: eth-mainnet
+      - key: BLOCK_IMPORT_BATCH_SIZE
+        value: "2"
+      - key: TESTNET_START_BLOCK
+        sync: false
+    databases:
+      - name: ethscriptions-db

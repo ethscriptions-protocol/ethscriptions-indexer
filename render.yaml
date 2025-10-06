@@ -6,8 +6,8 @@ services:
     plan: free
     branch: alt
     region: oregon
-    buildCommand: "bundle install"
-    preDeployCommand: "bundle exec rake db:migrate"
+    buildCommand: "bundle install && bundle exec rake db:migrate"
+    # preDeployCommand: "bundle exec rake db:migrate"
     startCommand: "bundle exec puma -C config/puma.rb"
     healthCheckPath: "/up"
     envVars:
@@ -45,7 +45,7 @@ services:
     plan: free
     branch: alt
     region: oregon
-    buildCommand: "bundle install"
+    buildCommand: "bundle install && bundle exec rake db:migrate"
     startCommand: "bundle exec clockwork config/main_importer_clock.rb"
     envVars:
       - key: DATABASE_URL

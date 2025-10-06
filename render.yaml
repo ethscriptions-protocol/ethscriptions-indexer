@@ -3,14 +3,6 @@ databases:
     plan: standard
 
 services:
-  - name: memcached
-    type: pserv
-    runtime: docker
-    plan: starter
-    image:
-      url: memcached:1.6-alpine
-    autoDeploy: false
-
   - name: ethscriptions-api
     type: web
     runtime: ruby
@@ -30,8 +22,6 @@ services:
         value: "2"
       - key: RAILS_MAX_THREADS
         value: "5"
-      - key: MEMCACHIER_SERVERS
-        value: memcached:11211
       - key: ETHEREUM_CLIENT_CLASS
         value: AlchemyClient
       - key: ETHEREUM_CLIENT_BASE_URL
@@ -62,8 +52,6 @@ services:
           property: connectionString
       - key: RAILS_ENV
         value: production
-      - key: MEMCACHIER_SERVERS
-        value: memcached:11211
       - key: ETHEREUM_CLIENT_CLASS
         value: AlchemyClient
       - key: ETHEREUM_CLIENT_BASE_URL

@@ -1,10 +1,13 @@
 services:
+  # Main Rails API server
   - name: ethscriptions-api
     type: web
     runtime: ruby
-    plan: starter
+    plan: free
     branch: alt
+    region: oregon
     buildCommand: "bundle install"
+    preDeployCommand: "bundle exec rake db:migrate"
     startCommand: "bundle exec puma -C config/puma.rb"
     healthCheckPath: "/up"
     envVars:
@@ -14,12 +17,34 @@ services:
           property: connectionString
       - key: RAILS_ENV
         value: production
+      - key: WEB_CONCURRENCY
+        value: "2"
+      - key: RAILS_MAX_THREADS
+        value: "5"
+      - key: ETHEREUM_CLIENT_CLASS
+        value: AlchemyClient
+      - key: ETHEREUM_CLIENT_BASE_URL
+        value: https://eth-mainnet.g.alchemy.com/v2
+      - key: ETHEREUM_CLIENT_API_KEY
+        sync: false
+      - key: ETHEREUM_BEACON_NODE_API_BASE_URL
+        sync: false
+      - key: ETHEREUM_BEACON_NODE_API_KEY
+        sync: false
+      - key: ETHEREUM_NETWORK
+        value: eth-mainnet
+      - key: BLOCK_IMPORT_BATCH_SIZE
+        value: "2"
+      - key: TESTNET_START_BLOCK
+        sync: false
 
+  # Background indexer worker
   - name: ethscriptions-indexer
     type: worker
     runtime: ruby
-    plan: starter
+    plan: free
     branch: alt
+    region: oregon
     buildCommand: "bundle install"
     startCommand: "bundle exec clockwork config/main_importer_clock.rb"
     envVars:
@@ -29,7 +54,23 @@ services:
           property: connectionString
       - key: RAILS_ENV
         value: production
+      - key: ETHEREUM_CLIENT_CLASS
+        value: AlchemyClient
+      - key: ETHEREUM_CLIENT_BASE_URL
+        value: https://eth-mainnet.g.alchemy.com/v2
+      - key: ETHEREUM_CLIENT_API_KEY
+        sync: false
+      - key: ETHEREUM_BEACON_NODE_API_BASE_URL
+        sync: false
+      - key: ETHEREUM_BEACON_NODE_API_KEY
+        sync: false
+      - key: ETHEREUM_NETWORK
+        value: eth-mainnet
+      - key: BLOCK_IMPORT_BATCH_SIZE
+        value: "2"
+      - key: TESTNET_START_BLOCK
+        sync: false
 
 databases:
   - name: ethscriptions-db
-    plan: basic-256mb
+    plan: free

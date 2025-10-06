@@ -1,5 +1,3 @@
-version: "1"
-
 services:
   # Main Rails API server
   - name: ethscriptions-api

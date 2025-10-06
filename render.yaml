@@ -1,7 +1,6 @@
-version: "1"
 databases:
   - name: ethscriptions-db
-    plan: standard
+    plan: basic-1gb
 
 services:
   - name: ethscriptions-api

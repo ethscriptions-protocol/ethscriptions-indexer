@@ -3,6 +3,7 @@ services:
     type: web
     runtime: ruby
     plan: starter
+    branch: alt
     buildCommand: "bundle install"
     startCommand: "bundle exec puma -C config/puma.rb"
     healthCheckPath: "/up"
@@ -18,6 +19,7 @@ services:
     type: worker
     runtime: ruby
     plan: starter
+    branch: alt
     buildCommand: "bundle install"
     startCommand: "bundle exec clockwork config/main_importer_clock.rb"
     envVars:

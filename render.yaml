@@ -1,14 +1,12 @@
 version: "1"
 
-databases:
-  - name: ethscriptions-db
-    plan: basic-1gb
-
 services:
+  # Main Rails API server
   - name: ethscriptions-api
     type: web
     runtime: ruby
     plan: starter
+    region: oregon
     buildCommand: "bundle install"
     preDeployCommand: "bundle exec rake db:migrate"
     startCommand: "bundle exec puma -C config/puma.rb"
@@ -41,10 +39,12 @@ services:
       - key: TESTNET_START_BLOCK
         sync: false
 
+  # Background indexer worker
   - name: ethscriptions-indexer
     type: worker
     runtime: ruby
     plan: starter
+    region: oregon
     buildCommand: "bundle install"
     startCommand: "bundle exec clockwork config/main_importer_clock.rb"
     envVars:
@@ -70,3 +70,8 @@ services:
         value: "2"
       - key: TESTNET_START_BLOCK
         sync: false
+
+databases:
+  - name: ethscriptions-db
+    plan: basic-1gb
+    region: oregon

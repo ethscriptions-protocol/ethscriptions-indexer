@@ -62,7 +62,7 @@ Rails.application.configure do
       compress: true
      }]
   else
-    [:memory_store, { size: 64.megabytes }]
+    [:memory_store, { size: 67108864 }]
   end
 
   # Use a real queuing backend for Active Job (and separate queues per environment).

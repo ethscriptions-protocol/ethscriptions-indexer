@@ -134,7 +134,7 @@ class Ethscription < ApplicationRecord
       end
 
       # Only add b64_content if content_uri is available (not the case with transaction_hash_only queries)
-      if attributes.key?('content_uri')
+      if has_attribute?(:content_uri)
         json['b64_content'] = Base64.strict_encode64(content.to_s)
       end
     end

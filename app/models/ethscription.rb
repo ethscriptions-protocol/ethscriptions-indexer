@@ -128,9 +128,14 @@ class Ethscription < ApplicationRecord
       if options[:include_latest_transfer]
         json[:latest_transfer] = latest_transfer.as_json
       end
-      
+
       if json['attachment_sha']
         json['attachment_path'] = Rails.application.routes.url_helpers.attachment_ethscription_path(id: transaction_hash)
+      end
+
+      # Only add b64_content if content_uri is available (not the case with transaction_hash_only queries)
+      if has_attribute?(:content_uri)
+        json['b64_content'] = Base64.strict_encode64(content.to_s)
       end
     end
   end

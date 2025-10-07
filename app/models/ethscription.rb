@@ -133,7 +133,10 @@ class Ethscription < ApplicationRecord
         json['attachment_path'] = Rails.application.routes.url_helpers.attachment_ethscription_path(id: transaction_hash)
       end
 
-      json['b64_content'] = Base64.strict_encode64(content.to_s)
+      # Only add b64_content if content_uri is available (not the case with transaction_hash_only queries)
+      if attributes.key?('content_uri')
+        json['b64_content'] = Base64.strict_encode64(content.to_s)
+      end
     end
   end
   

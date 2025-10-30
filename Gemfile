@@ -49,7 +49,7 @@ gem 'tapioca', require: false, :group => [:development, :test]
 
 gem "awesome_print", "~> 1.9"
 
-gem 'facet_rails_common', git: 'https://github.com/0xfacet/facet_rails_common.git'
+gem 'facet_rails_common', git: 'https://github.com/0xfacet/facet_rails_common.git', branch: 'lenient_base64'
 
 gem "memery", "~> 1.5"
 

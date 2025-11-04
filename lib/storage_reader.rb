@@ -15,9 +15,9 @@ class StorageReader
       { 'name' => 'initialOwner', 'type' => 'address' },
       { 'name' => 'previousOwner', 'type' => 'address' },
       { 'name' => 'l1BlockHash', 'type' => 'bytes32' },
-      { 'name' => 'l1BlockNumber', 'type' => 'uint48' },
-      { 'name' => 'l2BlockNumber', 'type' => 'uint48' },
-      { 'name' => 'createdAt', 'type' => 'uint48' },
+      { 'name' => 'l1BlockNumber', 'type' => 'uint256' },
+      { 'name' => 'l2BlockNumber', 'type' => 'uint256' },
+      { 'name' => 'createdAt', 'type' => 'uint256' },
       { 'name' => 'esip6', 'type' => 'bool' }
     ],
     'type' => 'tuple'

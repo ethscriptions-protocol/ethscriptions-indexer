@@ -582,7 +582,9 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         }
 
         page.items = items;
-        page.limit = resultsCount;
+        // `limit` reflects the effective (clamped) page size requested,
+        // while the actual number of returned items is `items.length`.
+        page.limit = effectiveLimit;
         page.nextStart = start + resultsCount;
         page.hasMore = page.nextStart < totalCount;
     }

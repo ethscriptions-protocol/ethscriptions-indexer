@@ -60,6 +60,16 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         ProtocolParams protocolParams;  // Protocol operation data (optional)
     }
 
+    /// @notice Paginated result for batch queries
+    struct PaginatedEthscriptionsResponse {
+        Ethscription[] items;
+        uint256 total;       // total items available (totalSupply or balanceOf(owner))
+        uint256 start;       // start index used for this page
+        uint256 limit;       // effective limit used for this page (after clamping)
+        uint256 nextStart;   // next page start index (end of this page)
+        bool hasMore;        // true if nextStart < total
+    }
+
     /// @notice Complete denormalized ethscription data for external/off-chain consumption
     /// @dev Includes all EthscriptionStorage fields plus owner and content
     struct Ethscription {
@@ -98,6 +108,14 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
 
     /// @dev Ethscriptions Prover contract (pre-deployed at known address)
     EthscriptionsProver public constant prover = EthscriptionsProver(Predeploys.ETHSCRIPTIONS_PROVER);
+
+    // =============================================================
+    //                         PAGINATION CONSTANTS
+    // =============================================================
+
+    /// @dev Maximum page sizes for pagination helpers
+    uint256 private constant MAX_PAGE_WITH_CONTENT = 50;
+    uint256 private constant MAX_PAGE_WITHOUT_CONTENT = 1000;
 
     // =============================================================
     //                      STATE VARIABLES
@@ -140,6 +158,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     error PreviousOwnerMismatch();
     error NoSuccessfulTransfers();
     error TokenDoesNotExist();
+    error InvalidPaginationLimit();
 
     // =============================================================
     //                          EVENTS
@@ -462,6 +481,112 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         bytes32 ethscriptionId = tokenIdToEthscriptionId[tokenId];
         // _buildEthscription calls _getEthscriptionOrRevert which handles existence check
         return _buildEthscription(ethscriptionId, includeContent);
+    }
+
+    /// @notice Paginate all ethscriptions by global tokenId range
+    /// @param start Starting tokenId (inclusive)
+    /// @param limit Maximum number of items to return (clamped by includeContent)
+    /// @param includeContent Whether to include content bytes in the returned structs
+    /// @return page Paginated result containing items and metadata
+    function getEthscriptions(uint256 start, uint256 limit, bool includeContent)
+        external
+        view
+        returns (PaginatedEthscriptionsResponse memory page)
+    {
+        return _createPaginatedEthscriptionsResponse({
+            byOwner: false,
+            owner: address(0),
+            start: start,
+            limit: limit,
+            includeContent: includeContent
+        });
+    }
+
+    /// @notice Overload with includeContent defaulting to true
+    function getEthscriptions(uint256 start, uint256 limit)
+        external
+        view
+        returns (PaginatedEthscriptionsResponse memory)
+    {
+        return _createPaginatedEthscriptionsResponse({
+            byOwner: false,
+            owner: address(0),
+            start: start,
+            limit: limit,
+            includeContent: true
+        });
+    }
+
+    /// @notice Paginate ethscriptions owned by a specific address
+    /// @param owner The owner address to filter by
+    /// @param start Start index within the owner's token set (inclusive)
+    /// @param limit Maximum number of items to return (clamped by includeContent)
+    /// @param includeContent Whether to include content bytes in the returned structs
+    /// @return page Paginated result containing items and metadata
+    function getOwnerEthscriptions(address owner, uint256 start, uint256 limit, bool includeContent)
+        external
+        view
+        returns (PaginatedEthscriptionsResponse memory page)
+    {
+        return _createPaginatedEthscriptionsResponse({
+            byOwner: true,
+            owner: owner,
+            start: start,
+            limit: limit,
+            includeContent: includeContent
+        });
+    }
+
+    /// @notice Overload with includeContent defaulting to true
+    function getOwnerEthscriptions(address owner, uint256 start, uint256 limit)
+        external
+        view
+        returns (PaginatedEthscriptionsResponse memory)
+    {
+        return _createPaginatedEthscriptionsResponse({
+            byOwner: true,
+            owner: owner,
+            start: start,
+            limit: limit,
+            includeContent: true
+        });
+    }
+
+    /// @notice Internal generic paginator shared by global and owner-scoped pagination
+    function _createPaginatedEthscriptionsResponse(
+        bool byOwner,
+        address owner,
+        uint256 start,
+        uint256 limit,
+        bool includeContent
+    ) internal view returns (PaginatedEthscriptionsResponse memory page) {
+        if (limit == 0) revert InvalidPaginationLimit();
+
+        uint256 totalCount = byOwner ? balanceOf(owner) : totalSupply();
+        page.total = totalCount;
+        page.start = start;
+
+        uint256 maxPerPage = includeContent ? MAX_PAGE_WITH_CONTENT : MAX_PAGE_WITHOUT_CONTENT;
+        uint256 effectiveLimit = limit > maxPerPage ? maxPerPage : limit;
+
+        uint256 endExclusive = start >= totalCount ? start : start + effectiveLimit;
+        if (endExclusive > totalCount) endExclusive = totalCount;
+        uint256 resultsCount = start >= totalCount ? 0 : (endExclusive - start);
+
+        Ethscription[] memory items = new Ethscription[](resultsCount);
+        for (uint256 index = 0; index < resultsCount;) {
+            uint256 tokenId = byOwner ? tokenOfOwnerByIndex(owner, start + index) : (start + index);
+            bytes32 id = tokenIdToEthscriptionId[tokenId];
+            items[index] = _buildEthscription(id, includeContent);
+            unchecked { ++index; }
+        }
+
+        page.items = items;
+        // `limit` reflects the effective (clamped) page size requested,
+        // while the actual number of returned items is `items.length`.
+        page.limit = effectiveLimit;
+        page.nextStart = start + resultsCount;
+        page.hasMore = page.nextStart < totalCount;
     }
 
     // -------------------- Internal helper for content retrieval --------------------

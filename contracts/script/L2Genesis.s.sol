@@ -130,6 +130,7 @@ contract L2Genesis is Script {
         dealEthToPrecompiles();
         setOPStackPredeploys();
         setEthscriptionsPredeploys();  // This now includes createGenesisEthscriptions()
+        deployMulticall3();
         
         // Fund dev accounts if enabled
         if (config.fundDevAccounts) {
@@ -261,6 +262,14 @@ contract L2Genesis is Script {
         bytes32 ownerSlot = bytes32(0); // Owner is typically stored at slot 0
         vm.store(Predeploys.PROXY_ADMIN, ownerSlot, bytes32(uint256(uint160(config.proxyAdminOwner))));
         vm.store(impl, ownerSlot, bytes32(uint256(uint160(config.proxyAdminOwner))));
+    }
+
+    /// @notice Deploy Multicall3 contract
+    function deployMulticall3() internal {
+        console.log("Deploying Multicall3 at", Predeploys.MultiCall3);
+        vm.etch(Predeploys.MultiCall3, Predeploys.MultiCall3Code);
+        // Set nonce to 1 for consistency with other predeploys
+        vm.setNonce(Predeploys.MultiCall3, 1);
     }
 
     /// @notice Fund development accounts with ETH

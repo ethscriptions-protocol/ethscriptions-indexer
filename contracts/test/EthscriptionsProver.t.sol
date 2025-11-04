@@ -30,8 +30,6 @@ contract EthscriptionsProverTest is TestSetup {
     }
     
     function testProveEthscriptionDataViaBatchFlush() public {
-        vm.warp(1760630078);
-
         // The ethscription creation in setUp should have queued it for proving
         // Let's transfer it to verify the proof includes previous owner
         uint256 tokenId = ethscriptions.getTokenId(TEST_TX_HASH);
@@ -88,7 +86,7 @@ contract EthscriptionsProverTest is TestSetup {
         prover.flushAllProofs();
         vm.stopPrank();
 
-        vm.warp(1760630078);
+        vm.warp(Constants.historicalBackfillApproxDoneAt + 1);
 
         // Now move to next block for our test
         vm.roll(block.number + 1);

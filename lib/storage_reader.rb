@@ -170,7 +170,7 @@ class StorageReader
 
       # Encode the parameters: bytes32 and bool (false)
       # bytes32 (32 bytes) + bool padded to 32 bytes (0x00...00 for false)
-      calldata = function_sig + [tx_hash_bytes32].pack('H*') + '0' * 64  # false as 32 bytes of zeros
+      calldata = function_sig + [tx_hash_bytes32].pack('H*') + "\x00" * 32  # false as 32 bytes of zeros
 
       # Make the eth_call
       result = eth_call('0x' + calldata.unpack1('H*'), block_tag)

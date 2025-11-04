@@ -588,5 +588,163 @@ RSpec.describe "Ethscription Creation", type: :integration do
         expect(stored[:content]).to eq("Hello from Input123")
       end
     end
+
+    describe "Large content with SSTORE2Unlimited" do
+      it "successfully stores and retrieves content larger than 24KB" do
+        # Create content larger than 24KB (24576 bytes)
+        # The old bytecode size limit was 24KB, but our SSTORE2Unlimited removes this restriction
+        large_content_size = 30_000  # 30KB, well over the old 24KB limit
+        large_text = "A" * large_content_size
+        large_data_uri = "data:text/plain;charset=utf-8,#{large_text}"
+
+        # Create the large ethscription
+        expect_ethscription_success(
+          create_input(
+            creator: alice,
+            to: bob,
+            data_uri: large_data_uri
+          )
+        ) do |results|
+          # Verify the ethscription was created
+          expect(results[:ethscription_ids].size).to eq(1)
+          expect(results[:l2_receipts].first[:status]).to eq('0x1')
+
+          # Retrieve and verify the stored content
+          stored = get_ethscription_content(results[:ethscription_ids].first)
+
+          # Verify the content size
+          expect(stored[:content].length).to eq(large_content_size)
+
+          # Verify the content matches exactly
+          expect(stored[:content]).to eq(large_text)
+
+          # Verify other metadata
+          expect(stored[:mimetype]).to eq("text/plain")
+
+          # Log success for visibility
+          puts "✓ Successfully created and retrieved ethscription with #{large_content_size} bytes (#{large_content_size / 1024}KB) of content"
+        end
+      end
+
+      it "handles very large content (100KB+)" do
+        # Test with even larger content to ensure SSTORE2Unlimited works for very large data
+        very_large_content_size = 100_000  # 100KB
+
+        # Create repeating pattern to make it compressible but still large
+        pattern = "Hello World! This is a test of very large content storage. "
+        repeat_count = very_large_content_size / pattern.length
+        very_large_text = pattern * repeat_count
+        very_large_data_uri = "data:text/plain;charset=utf-8,#{very_large_text}"
+
+        # Create the very large ethscription
+        expect_ethscription_success(
+          create_input(
+            creator: alice,
+            to: bob,
+            data_uri: very_large_data_uri
+          )
+        ) do |results|
+          # Verify creation
+          expect(results[:ethscription_ids].size).to eq(1)
+
+          # Retrieve and verify
+          stored = get_ethscription_content(results[:ethscription_ids].first)
+
+          # Verify size (approximately, due to pattern repetition)
+          expect(stored[:content].length).to be >= (very_large_content_size * 0.9)
+
+          # Verify content starts correctly
+          expect(stored[:content]).to start_with(pattern)
+
+          puts "✓ Successfully handled very large ethscription with ~#{stored[:content].length} bytes (~#{stored[:content].length / 1024}KB) of content"
+        end
+      end
+
+      it "correctly handles large Base64-encoded binary content" do
+        # Test with large binary content (e.g., image data) encoded as Base64
+        # Generate pseudo-random binary data
+        binary_size = 25_000  # 25KB of binary data
+        binary_data = (0...binary_size).map { rand(256).chr }.join
+        base64_content = Base64.strict_encode64(binary_data)
+
+        # Create data URI with Base64-encoded content
+        large_base64_uri = "data:application/octet-stream;base64,#{base64_content}"
+
+        expect_ethscription_success(
+          create_input(
+            creator: alice,
+            to: bob,
+            data_uri: large_base64_uri
+          )
+        ) do |results|
+          # Verify creation
+          expect(results[:ethscription_ids].size).to eq(1)
+
+          # Retrieve stored content
+          stored = get_ethscription_content(results[:ethscription_ids].first)
+
+          # Content should be the decoded binary, not the base64 string
+          expect(stored[:content].length).to eq(binary_size)
+          expect(stored[:content].encoding).to eq(Encoding::ASCII_8BIT)
+
+          # Verify mimetype
+          expect(stored[:mimetype]).to eq("application/octet-stream")
+
+          # Verify content matches original binary data
+          expect(stored[:content]).to eq(binary_data)
+
+          puts "✓ Successfully stored and retrieved #{binary_size} bytes of binary content via Base64 encoding"
+        end
+      end
+
+      it "handles large JSON content" do
+        # Create a large JSON structure
+        large_json_obj = {
+          "description" => "Large JSON test for SSTORE2Unlimited",
+          "data" => (1..1000).map do |i|
+            {
+              "id" => i,
+              "name" => "Item #{i}",
+              "description" => "This is a description for item number #{i} in our large JSON test",
+              "attributes" => {
+                "color" => ["red", "blue", "green", "yellow"].sample,
+                "size" => rand(1..100),
+                "weight" => rand(1.0..100.0).round(2),
+                "tags" => ["tag1", "tag2", "tag3", "tag4", "tag5"]
+              }
+            }
+          end
+        }
+
+        large_json_string = JSON.generate(large_json_obj)
+        json_data_uri = "data:application/json,#{large_json_string}"
+
+        puts "JSON content size: #{large_json_string.length} bytes (#{large_json_string.length / 1024}KB)"
+
+        expect_ethscription_success(
+          create_input(
+            creator: alice,
+            to: bob,
+            data_uri: json_data_uri
+          )
+        ) do |results|
+          # Verify creation
+          expect(results[:ethscription_ids].size).to eq(1)
+
+          # Retrieve and parse stored JSON
+          stored = get_ethscription_content(results[:ethscription_ids].first)
+          parsed_json = JSON.parse(stored[:content])
+
+          # Verify JSON structure
+          expect(parsed_json["data"].length).to eq(1000)
+          expect(parsed_json["description"]).to eq("Large JSON test for SSTORE2Unlimited")
+
+          # Verify mimetype
+          expect(stored[:mimetype]).to eq("application/json")
+
+          puts "✓ Successfully stored and retrieved large JSON with #{stored[:content].length} bytes"
+        end
+      end
+    end
   end
 end

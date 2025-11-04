@@ -136,9 +136,10 @@ contract EthscriptionsProver {
     /// @param ethscriptionId The Ethscription ID (L1 tx hash)
     /// @param proofInfo The queued proof info containing block data
     function _createAndSendProof(bytes32 ethscriptionId, QueuedProof memory proofInfo) internal {
-        // Get ethscription data including previous owner
-        Ethscriptions.Ethscription memory ethscription = ethscriptions.getEthscription(ethscriptionId);
-        address currentOwner = ethscriptions.ownerOf(ethscriptionId);
+        // Get ethscription data including previous owner (without content for gas efficiency)
+        Ethscriptions.Ethscription memory ethscription = ethscriptions.getEthscription(ethscriptionId, false);
+        // currentOwner is already in the struct now
+        address currentOwner = ethscription.currentOwner;
 
         // Create proof struct with all ethscription data
         EthscriptionDataProof memory proof = EthscriptionDataProof({
@@ -150,7 +151,7 @@ contract EthscriptionsProver {
             currentOwner: currentOwner,
             previousOwner: ethscription.previousOwner,
             esip6: ethscription.esip6,
-            ethscriptionNumber: ethscription.ethscriptionNumber,
+            ethscriptionNumber: uint48(ethscription.ethscriptionNumber),
             l1BlockNumber: proofInfo.l1BlockNumber,
             l2BlockNumber: proofInfo.l2BlockNumber,
             l2Timestamp: proofInfo.l2BlockTimestamp

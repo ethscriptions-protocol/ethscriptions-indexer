@@ -130,7 +130,7 @@ contract SSTORE2ContentSizesTest is TestSetup {
         // Test content retrieval via getEthscriptionContent
         g0 = gasleft();
         vm.resumeGasMetering();
-        bytes memory retrievedContent = eth.getEthscriptionContent(txHash);
+        bytes memory retrievedContent = eth.readContent(txHash);
         vm.pauseGasMetering();
         uint256 retrievalGas = g0 - gasleft();
 
@@ -284,8 +284,8 @@ contract SSTORE2ContentSizesTest is TestSetup {
         assertEq(pointer1, pointer2, "Pointers should be identical");
 
         // Verify content retrieval works for both
-        bytes memory content1 = eth.getEthscriptionContent(txHash1);
-        bytes memory content2 = eth.getEthscriptionContent(txHash2);
+        bytes memory content1 = eth.readContent(txHash1);
+        bytes memory content2 = eth.readContent(txHash2);
         assertEq(keccak256(content1), keccak256(content2), "Content should be identical");
         assertEq(keccak256(content1), keccak256(content), "Retrieved content should match original");
 

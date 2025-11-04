@@ -43,7 +43,7 @@ contract GenesisEthscriptions is Ethscriptions {
         firstEthscriptionByContentUri[params.contentUriHash] = params.ethscriptionId;
 
         // Set all values including genesis-specific ones
-        ethscriptions[params.ethscriptionId] = Ethscription({
+        ethscriptions[params.ethscriptionId] = EthscriptionStorage({
             // Fixed-size fields
             contentUriHash: params.contentUriHash,
             contentSha: contentSha,

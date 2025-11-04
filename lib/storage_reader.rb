@@ -1,8 +1,30 @@
 class StorageReader
   ETHSCRIPTIONS_ADDRESS = SysConfig::ETHSCRIPTIONS_ADDRESS.to_hex
 
-  # Define the flattened Ethscription struct ABI
+  # Define the new denormalized Ethscription struct ABI
   ETHSCRIPTION_STRUCT_ABI = {
+    'components' => [
+      { 'name' => 'ethscriptionId', 'type' => 'bytes32' },
+      { 'name' => 'ethscriptionNumber', 'type' => 'uint256' },
+      { 'name' => 'contentUriHash', 'type' => 'bytes32' },
+      { 'name' => 'contentSha', 'type' => 'bytes32' },
+      { 'name' => 'mimetype', 'type' => 'string' },
+      { 'name' => 'content', 'type' => 'bytes' },
+      { 'name' => 'currentOwner', 'type' => 'address' },
+      { 'name' => 'creator', 'type' => 'address' },
+      { 'name' => 'initialOwner', 'type' => 'address' },
+      { 'name' => 'previousOwner', 'type' => 'address' },
+      { 'name' => 'l1BlockHash', 'type' => 'bytes32' },
+      { 'name' => 'l1BlockNumber', 'type' => 'uint48' },
+      { 'name' => 'l2BlockNumber', 'type' => 'uint48' },
+      { 'name' => 'createdAt', 'type' => 'uint48' },
+      { 'name' => 'esip6', 'type' => 'bool' }
+    ],
+    'type' => 'tuple'
+  }
+
+  # Define the old storage struct ABI for getEthscriptionWithoutContent
+  ETHSCRIPTION_STORAGE_STRUCT_ABI = {
     'components' => [
       { 'name' => 'contentUriHash', 'type' => 'bytes32' },
       { 'name' => 'contentSha', 'type' => 'bytes32' },
@@ -28,6 +50,18 @@ class StorageReader
       'stateMutability' => 'view',
       'inputs' => [
         { 'name' => 'ethscriptionId', 'type' => 'bytes32' }
+      ],
+      'outputs' => [
+        ETHSCRIPTION_STRUCT_ABI
+      ]
+    },
+    {
+      'name' => 'getEthscription',
+      'type' => 'function',
+      'stateMutability' => 'view',
+      'inputs' => [
+        { 'name' => 'ethscriptionId', 'type' => 'bytes32' },
+        { 'name' => 'includeContent', 'type' => 'bool' }
       ],
       'outputs' => [
         ETHSCRIPTION_STRUCT_ABI
@@ -63,28 +97,16 @@ class StorageReader
       'outputs' => [
         { 'name' => '', 'type' => 'uint256' }
       ]
-    },
-    {
-      'name' => 'getEthscriptionWithContent',
-      'type' => 'function',
-      'stateMutability' => 'view',
-      'inputs' => [
-        { 'name' => 'ethscriptionId', 'type' => 'bytes32' }
-      ],
-      'outputs' => [
-        { 'name' => 'ethscription', **ETHSCRIPTION_STRUCT_ABI },
-        { 'name' => 'content', 'type' => 'bytes' }
-      ]
     }
   ]
 
   class << self
     def get_ethscription_with_content(tx_hash, block_tag: 'latest')
-      # Single call to get both ethscription and content
+      # Use the new getEthscription function that returns everything including content
       tx_hash_bytes32 = format_bytes32(tx_hash)
 
       # Build function signature and encode parameters
-      function_sig = Eth::Util.keccak256('getEthscriptionWithContent(bytes32)')[0...4]
+      function_sig = Eth::Util.keccak256('getEthscription(bytes32)')[0...4]
 
       # Encode the parameter (bytes32 is already 32 bytes)
       calldata = function_sig + [tx_hash_bytes32].pack('H*')
@@ -97,33 +119,41 @@ class StorageReader
       # If result is nil, that's an RPC/network error
       raise StandardError, "RPC call failed for ethscription #{tx_hash}" if result.nil?
 
-      # Decode the tuple: (Ethscription, bytes)
-      types = ['(bytes32,bytes32,bytes32,address,uint48,uint48,string,address,uint48,bool,address,uint48)', 'bytes']
+      # Decode the single Ethscription struct with all fields including content
+      # New struct order: ethscriptionId, ethscriptionNumber, contentUriHash, contentSha, mimetype, content,
+      #                   currentOwner, creator, initialOwner, previousOwner, l1BlockHash,
+      #                   l1BlockNumber, l2BlockNumber, createdAt, esip6
+      types = ['(bytes32,uint256,bytes32,bytes32,string,bytes,address,address,address,address,bytes32,uint256,uint256,uint256,bool)']
       decoded = Eth::Abi.decode(types, result)
 
-      # Extract ethscription struct and content
+      # The struct is returned as an array
       ethscription_data = decoded[0]
-      content_data = decoded[1]
 
       {
+        # Identity
+        ethscription_id: '0x' + ethscription_data[0].unpack1('H*'),
+        ethscription_number: ethscription_data[1],
+
         # Content fields
-        content_uri_hash: '0x' + ethscription_data[0].unpack1('H*'),
-        content_sha: '0x' + ethscription_data[1].unpack1('H*'),
-        mimetype: ethscription_data[6],  # mimetype at index 6
-        esip6: ethscription_data[9],  # bool at index 9
+        content_uri_hash: '0x' + ethscription_data[2].unpack1('H*'),
+        content_sha: '0x' + ethscription_data[3].unpack1('H*'),
+        mimetype: ethscription_data[4],
+        content: ethscription_data[5],  # content is now at index 5
 
-        # Main fields
-        creator: Eth::Address.new(ethscription_data[3]).to_s,
-        initial_owner: Eth::Address.new(ethscription_data[7]).to_s,
-        previous_owner: Eth::Address.new(ethscription_data[10]).to_s,
-        ethscription_number: ethscription_data[8],
-        created_at: ethscription_data[4],
-        l1_block_number: ethscription_data[5],
-        l2_block_number: ethscription_data[11],
-        l1_block_hash: '0x' + ethscription_data[2].unpack1('H*'),
+        # Ownership fields
+        current_owner: Eth::Address.new(ethscription_data[6]).to_s,
+        creator: Eth::Address.new(ethscription_data[7]).to_s,
+        initial_owner: Eth::Address.new(ethscription_data[8]).to_s,
+        previous_owner: Eth::Address.new(ethscription_data[9]).to_s,
 
-        # Content
-        content: content_data
+        # Block/time data
+        l1_block_hash: '0x' + ethscription_data[10].unpack1('H*'),
+        l1_block_number: ethscription_data[11],
+        l2_block_number: ethscription_data[12],
+        created_at: ethscription_data[13],
+
+        # Protocol
+        esip6: ethscription_data[14]
       }
     rescue => e
       Rails.logger.error "Failed to get ethscription with content #{tx_hash}: #{e.message}"
@@ -132,14 +162,15 @@ class StorageReader
     end
 
     def get_ethscription(tx_hash, block_tag: 'latest')
-      # Ensure tx_hash is properly formatted as bytes32
+      # Use getEthscription with includeContent=false for gas-optimized queries without content
       tx_hash_bytes32 = format_bytes32(tx_hash)
 
       # Build function signature and encode parameters
-      function_sig = Eth::Util.keccak256('getEthscription(bytes32)')[0...4]
+      function_sig = Eth::Util.keccak256('getEthscription(bytes32,bool)')[0...4]
 
-      # Encode the parameter (bytes32 is already 32 bytes)
-      calldata = function_sig + [tx_hash_bytes32].pack('H*')
+      # Encode the parameters: bytes32 and bool (false)
+      # bytes32 (32 bytes) + bool padded to 32 bytes (0x00...00 for false)
+      calldata = function_sig + [tx_hash_bytes32].pack('H*') + '0' * 64  # false as 32 bytes of zeros
 
       # Make the eth_call
       result = eth_call('0x' + calldata.unpack1('H*'), block_tag)
@@ -148,29 +179,41 @@ class StorageReader
       # Nil indicates an RPC/network failure
       raise StandardError, "RPC call failed for ethscription #{tx_hash}" if result.nil?
 
-      # Decode using Eth::Abi - flattened struct
-      types = ['(bytes32,bytes32,bytes32,address,uint48,uint48,string,address,uint48,bool,address,uint48)']
+      # Decode the Ethscription struct without content
+      # Struct order: ethscriptionId, ethscriptionNumber, contentUriHash, contentSha, mimetype, content (empty),
+      #               currentOwner, creator, initialOwner, previousOwner, l1BlockHash,
+      #               l1BlockNumber, l2BlockNumber, createdAt, esip6
+      types = ['(bytes32,uint256,bytes32,bytes32,string,bytes,address,address,address,address,bytes32,uint256,uint256,uint256,bool)']
       decoded = Eth::Abi.decode(types, result)
 
       # The struct is returned as an array
       ethscription_data = decoded[0]
 
       {
-        # Content fields
-        content_uri_hash: '0x' + ethscription_data[0].unpack1('H*'),
-        content_sha: '0x' + ethscription_data[1].unpack1('H*'),
-        mimetype: ethscription_data[6],  # mimetype at index 6
-        esip6: ethscription_data[9],  # bool at index 9
+        # Identity
+        ethscription_id: '0x' + ethscription_data[0].unpack1('H*'),
+        ethscription_number: ethscription_data[1],
 
-        # Main fields
-        creator: Eth::Address.new(ethscription_data[3]).to_s,
-        initial_owner: Eth::Address.new(ethscription_data[7]).to_s,
-        previous_owner: Eth::Address.new(ethscription_data[10]).to_s,
-        ethscription_number: ethscription_data[8],
-        created_at: ethscription_data[4],
-        l1_block_number: ethscription_data[5],
-        l2_block_number: ethscription_data[11],
-        l1_block_hash: '0x' + ethscription_data[2].unpack1('H*')
+        # Content fields (no actual content bytes)
+        content_uri_hash: '0x' + ethscription_data[2].unpack1('H*'),
+        content_sha: '0x' + ethscription_data[3].unpack1('H*'),
+        mimetype: ethscription_data[4],
+        # Skip content at index 5 (it's empty for WithoutContent)
+
+        # Ownership fields
+        current_owner: Eth::Address.new(ethscription_data[6]).to_s,
+        creator: Eth::Address.new(ethscription_data[7]).to_s,
+        initial_owner: Eth::Address.new(ethscription_data[8]).to_s,
+        previous_owner: Eth::Address.new(ethscription_data[9]).to_s,
+
+        # Block/time data
+        l1_block_hash: '0x' + ethscription_data[10].unpack1('H*'),
+        l1_block_number: ethscription_data[11],
+        l2_block_number: ethscription_data[12],
+        created_at: ethscription_data[13],
+
+        # Protocol
+        esip6: ethscription_data[14]
       }
     rescue EthRpcClient::ExecutionRevertedError => e
       # Contract reverted - ethscription doesn't exist

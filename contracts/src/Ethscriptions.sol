@@ -17,13 +17,14 @@ import "./libraries/Constants.sol";
 /// @dev Uses ethscription number as token ID and name, while transaction hash remains the primary identifier for function calls
 contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     using LibString for *;
-    using EthscriptionsRendererLib for Ethscription;
+    using EthscriptionsRendererLib for EthscriptionStorage;
 
     // =============================================================
     //                          STRUCTS
     // =============================================================
 
-    struct Ethscription {
+    /// @notice Internal storage struct for ethscriptions (optimized for storage)
+    struct EthscriptionStorage {
         // Full slots
         bytes32 contentUriHash;
         bytes32 contentSha;
@@ -59,6 +60,35 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         ProtocolParams protocolParams;  // Protocol operation data (optional)
     }
 
+    /// @notice Complete denormalized ethscription data for external/off-chain consumption
+    /// @dev Includes all EthscriptionStorage fields plus owner and content
+    struct Ethscription {
+        // Identity
+        bytes32 ethscriptionId;        // L1 tx hash (the key)
+        uint256 ethscriptionNumber;    // Token ID
+
+        // Core metadata
+        bytes32 contentUriHash;
+        bytes32 contentSha;
+        string  mimetype;
+        bytes   content;               // Full content bytes (empty when includeContent=false)
+
+        // Ownership
+        address currentOwner;          // Current owner from ERC721 storage
+        address creator;
+        address initialOwner;
+        address previousOwner;
+
+        // Block/time data
+        bytes32 l1BlockHash;
+        uint256 l1BlockNumber;
+        uint256 l2BlockNumber;
+        uint256 createdAt;
+
+        // Protocol
+        bool    esip6;
+    }
+
     // =============================================================
     //                     CONSTANTS & IMMUTABLES
     // =============================================================
@@ -74,7 +104,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     // =============================================================
 
     /// @dev Ethscription ID (L1 tx hash) => Ethscription data
-    mapping(bytes32 => Ethscription) internal ethscriptions;
+    mapping(bytes32 => EthscriptionStorage) internal ethscriptions;
 
     /// @dev Content SHA => packed content (for <32 bytes) or SSTORE2 pointer (for >=32 bytes)
     mapping(bytes32 => bytes32) public contentStorageBySha;
@@ -163,16 +193,15 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     }
 
     /// @notice Resolve and validate an ethscription (by ID) or revert
-    function _getEthscriptionOrRevert(bytes32 ethscriptionId) internal view returns (Ethscription storage ethscription) {
+    function _getEthscriptionOrRevert(bytes32 ethscriptionId) internal view returns (EthscriptionStorage storage ethscription) {
         if (!_ethscriptionExists(ethscriptionId)) revert EthscriptionDoesNotExist();
         ethscription = ethscriptions[ethscriptionId];
     }
 
     /// @notice Resolve and validate an ethscription (by tokenId) or revert
-    function _getEthscriptionOrRevert(uint256 tokenId) internal view returns (Ethscription storage ethscription) {
+    function _getEthscriptionOrRevert(uint256 tokenId) internal view returns (EthscriptionStorage storage ethscription) {
         bytes32 id = tokenIdToEthscriptionId[tokenId];
-        if (!_ethscriptionExists(id)) revert TokenDoesNotExist();
-        ethscription = ethscriptions[id];
+        ethscription = _getEthscriptionOrRevert(id);
     }
 
     // =============================================================
@@ -218,7 +247,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         // Store content and get content SHA (of raw bytes)
         bytes32 contentSha = _storeContent(params.content);
 
-        ethscriptions[params.ethscriptionId] = Ethscription({
+        ethscriptions[params.ethscriptionId] = EthscriptionStorage({
             contentUriHash: params.contentUriHash,
             contentSha: contentSha,
             l1BlockHash: l1Block.hash(),
@@ -269,7 +298,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         bytes32 ethscriptionId
     ) external {
         // Load and validate
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
         uint256 tokenId = ethscription.ethscriptionNumber;
         // Standard ERC721 transfer will handle authorization
         transferFrom(msg.sender, to, tokenId);
@@ -285,7 +314,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         bytes32 ethscriptionId,
         address previousOwner
     ) external {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
 
         // Verify the previous owner matches
         if (ethscription.previousOwner != previousOwner) {
@@ -308,7 +337,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         for (uint256 i = 0; i < ethscriptionIds.length; i++) {
             // Get the ethscription to find its token ID
             if (!_ethscriptionExists(ethscriptionIds[i])) continue; // Skip non-existent ethscriptions
-            Ethscription storage ethscription = ethscriptions[ethscriptionIds[i]];
+            EthscriptionStorage storage ethscription = ethscriptions[ethscriptionIds[i]];
 
             uint256 tokenId = ethscription.ethscriptionNumber;
 
@@ -344,11 +373,11 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @notice Returns the full data URI for a token
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         // Find the ethscription for this token ID (ethscription number)
-        Ethscription storage ethscription = _getEthscriptionOrRevert(tokenId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(tokenId);
         bytes32 id = tokenIdToEthscriptionId[tokenId];
 
         // Get content
-        bytes memory content = getEthscriptionContent(id);
+        bytes memory content = _getEthscriptionContent(id);
 
         // Build complete token URI using the library - it handles everything internally
         return EthscriptionsRendererLib.buildTokenURI(ethscription, id, content);
@@ -359,21 +388,88 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @return mediaType Either "image" or "animation_url"
     /// @return mediaUri The data URI for the media
     function getMediaUri(bytes32 ethscriptionId) external view returns (string memory mediaType, string memory mediaUri) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        bytes memory content = getEthscriptionContent(ethscriptionId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        bytes memory content = _getEthscriptionContent(ethscriptionId);
         return ethscription.getMediaUri(content);
     }
 
     // -------------------- Data Retrieval --------------------
 
-    /// @notice Get ethscription details (returns struct to avoid stack too deep)
-    function getEthscription(bytes32 ethscriptionId) external view returns (Ethscription memory) {
-        return _getEthscriptionOrRevert(ethscriptionId);
+    /// @notice Internal helper to build complete ethscription data
+    /// @param ethscriptionId The ethscription ID
+    /// @param includeContent Whether to include content bytes
+    /// @return complete The complete ethscription data
+    function _buildEthscription(bytes32 ethscriptionId, bool includeContent) internal view returns (Ethscription memory) {
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+
+        return Ethscription({
+            // Identity
+            ethscriptionId: ethscriptionId,
+            ethscriptionNumber: uint256(ethscription.ethscriptionNumber),
+
+            // Core metadata
+            contentUriHash: ethscription.contentUriHash,
+            contentSha: ethscription.contentSha,
+            mimetype: ethscription.mimetype,
+            content: includeContent ? _getEthscriptionContent(ethscriptionId) : bytes(""),
+
+            // Ownership
+            currentOwner: _ownerOf(uint256(ethscription.ethscriptionNumber)),
+            creator: ethscription.creator,
+            initialOwner: ethscription.initialOwner,
+            previousOwner: ethscription.previousOwner,
+
+            // Block/time data
+            l1BlockHash: ethscription.l1BlockHash,
+            l1BlockNumber: uint256(ethscription.l1BlockNumber),
+            l2BlockNumber: uint256(ethscription.l2BlockNumber),
+            createdAt: uint256(ethscription.createdAt),
+
+            // Protocol
+            esip6: ethscription.esip6
+        });
     }
 
-    /// @notice Get content for an ethscription
-    function getEthscriptionContent(bytes32 ethscriptionId) public view returns (bytes memory) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+    /// @notice Get complete ethscription data (includes content by default)
+    /// @param ethscriptionId The ethscription ID to look up
+    /// @return The complete ethscription data with content
+    function getEthscription(bytes32 ethscriptionId) external view returns (Ethscription memory) {
+        return _buildEthscription(ethscriptionId, true);
+    }
+
+    /// @notice Get complete ethscription data with option to exclude content
+    /// @param ethscriptionId The ethscription ID to look up
+    /// @param includeContent Whether to include content (false for gas efficiency)
+    /// @return The complete ethscription data
+    function getEthscription(bytes32 ethscriptionId, bool includeContent) external view returns (Ethscription memory) {
+        return _buildEthscription(ethscriptionId, includeContent);
+    }
+
+    /// @notice Get complete ethscription data by tokenId (includes content by default)
+    /// @param tokenId The token ID to look up
+    /// @return The complete ethscription data with content
+    function getEthscription(uint256 tokenId) external view returns (Ethscription memory) {
+        bytes32 ethscriptionId = tokenIdToEthscriptionId[tokenId];
+        // _buildEthscription calls _getEthscriptionOrRevert which handles existence check
+        return _buildEthscription(ethscriptionId, true);
+    }
+
+    /// @notice Get complete ethscription data by tokenId with option to exclude content
+    /// @param tokenId The token ID to look up
+    /// @param includeContent Whether to include content (false for gas efficiency)
+    /// @return The complete ethscription data
+    function getEthscription(uint256 tokenId, bool includeContent) external view returns (Ethscription memory) {
+        bytes32 ethscriptionId = tokenIdToEthscriptionId[tokenId];
+        // _buildEthscription calls _getEthscriptionOrRevert which handles existence check
+        return _buildEthscription(ethscriptionId, includeContent);
+    }
+
+    // -------------------- Internal helper for content retrieval --------------------
+
+    /// @notice Internal: Get content for an ethscription
+    /// @dev Kept as internal for tokenURI and other internal uses
+    function _getEthscriptionContent(bytes32 ethscriptionId) internal view returns (bytes memory) {
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
         bytes32 ref = contentStorageBySha[ethscription.contentSha];
 
         // Check if it's inline content using BytePackLib
@@ -385,36 +481,6 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         address pointer = address(uint160(uint256(ref)));
 
         return SSTORE2Unlimited.read(pointer);
-    }
-
-    /// @notice Get ethscription details and content in a single call
-    /// @param ethscriptionId The ethscription ID to look up
-    /// @return ethscription The ethscription struct
-    /// @return content The content bytes
-    function getEthscriptionWithContent(bytes32 ethscriptionId) external view returns (Ethscription memory ethscription, bytes memory content) {
-        ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        content = getEthscriptionContent(ethscriptionId);
-    }
-
-    /// @notice Overload: get ethscription by tokenId
-    function getEthscription(uint256 tokenId) external view returns (Ethscription memory) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(tokenId);
-        return ethscription;
-    }
-
-    /// @notice Overload: get content by tokenId
-    function getEthscriptionContent(uint256 tokenId) external view returns (bytes memory) {
-        // Ensure it exists
-        _getEthscriptionOrRevert(tokenId);
-        bytes32 id = tokenIdToEthscriptionId[tokenId];
-        return getEthscriptionContent(id);
-    }
-
-    /// @notice Overload: get struct and content by tokenId
-    function getEthscriptionWithContent(uint256 tokenId) external view returns (Ethscription memory ethscription, bytes memory content) {
-        ethscription = _getEthscriptionOrRevert(tokenId);
-        bytes32 id = tokenIdToEthscriptionId[tokenId];
-        content = getEthscriptionContent(id);
     }
 
     // ---------------- Ownership & Existence Checks ----------------
@@ -433,7 +499,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @notice Get owner of an ethscription by transaction hash
     /// @dev Overload of ownerOf that accepts transaction hash instead of token ID
     function ownerOf(bytes32 ethscriptionId) external view returns (address) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
         uint256 tokenId = ethscription.ethscriptionNumber;
 
         return ownerOf(tokenId);
@@ -443,7 +509,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @param ethscriptionId The ethscription ID to look up
     /// @return The token ID (ethscription number)
     function getTokenId(bytes32 ethscriptionId) external view returns (uint256) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
         return ethscription.ethscriptionNumber;
     }
 
@@ -463,7 +529,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address from) {
         // Find the ethscription ID for this token ID (ethscription number)
         bytes32 id = tokenIdToEthscriptionId[tokenId];
-        Ethscription storage ethscription = ethscriptions[id];
+        EthscriptionStorage storage ethscription = ethscriptions[id];
 
         // Call parent implementation first to handle the actual update
         from = super._update(to, tokenId, auth);
@@ -617,7 +683,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
             bytes32 ethscriptionId = pendingGenesisEvents[i];
 
             // Get the ethscription data
-            Ethscription storage ethscription = ethscriptions[ethscriptionId];
+            EthscriptionStorage storage ethscription = ethscriptions[ethscriptionId];
             uint256 tokenId = ethscription.ethscriptionNumber;
 
             // Emit events in the same order as live mints:

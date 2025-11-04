@@ -3,7 +3,7 @@ pragma solidity 0.8.24;
 
 import "./ERC721EthscriptionsSequentialEnumerableUpgradeable.sol";
 import {LibString} from "solady/utils/LibString.sol";
-import "./libraries/SSTORE2ChunkedStorageLib.sol";
+import "./libraries/SSTORE2Unlimited.sol";
 import "./libraries/EthscriptionsRendererLib.sol";
 import "./EthscriptionsProver.sol";
 import "./libraries/Predeploys.sol";
@@ -16,7 +16,6 @@ import "./libraries/Constants.sol";
 /// @dev Uses ethscription number as token ID and name, while transaction hash remains the primary identifier for function calls
 contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     using LibString for *;
-    using SSTORE2ChunkedStorageLib for address[];
     using EthscriptionsRendererLib for Ethscription;
 
     // =============================================================
@@ -76,8 +75,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @dev Ethscription ID (L1 tx hash) => Ethscription data
     mapping(bytes32 => Ethscription) internal ethscriptions;
 
-    /// @dev Content SHA => SSTORE2 pointers array
-    mapping(bytes32 => address[]) public contentPointersBySha;
+    /// @dev Content SHA => SSTORE2 pointer (single address, no array)
+    mapping(bytes32 => address) public contentPointerBySha;
 
     /// @dev Content URI hash => first ethscription tx hash that used it (for protocol uniqueness check)
     /// @dev bytes32(0) means unused, non-zero means the content URI has been used
@@ -374,9 +373,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @notice Get content for an ethscription
     function getEthscriptionContent(bytes32 ethscriptionId) public view returns (bytes memory) {
         Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        address[] storage pointers = contentPointersBySha[ethscription.contentSha];
-        // Empty content is valid - returns "" for empty pointers array
-        return pointers.read();
+        address pointer = contentPointerBySha[ethscription.contentSha];
+        return SSTORE2Unlimited.read(pointer);
     }
 
     /// @notice Get ethscription details and content in a single call
@@ -498,21 +496,14 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         contentSha = sha256(content);
 
         // Check if content already exists
-        address[] storage existingPointers = contentPointersBySha[contentSha];
-
-        // Check if content was already stored (pointers array will be non-empty for stored content)
-        if (existingPointers.length > 0) {
+        address existingPointer = contentPointerBySha[contentSha];
+        if (existingPointer != address(0)) {
             // Content already stored, just return the SHA
             return contentSha;
         }
 
-        // Content doesn't exist, store it using SSTORE2
-        address[] memory pointers = SSTORE2ChunkedStorageLib.store(content);
-
-        // Only store non-empty pointer arrays (empty content doesn't need deduplication)
-        if (pointers.length > 0) {
-            contentPointersBySha[contentSha] = pointers;
-        }
+        // Content doesn't exist, store it using SSTORE2Unlimited (handles any size)
+        contentPointerBySha[contentSha] = SSTORE2Unlimited.write(content);
 
         return contentSha;
     }

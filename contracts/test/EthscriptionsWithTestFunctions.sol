@@ -2,7 +2,7 @@
 pragma solidity 0.8.24;
 
 import "../src/Ethscriptions.sol";
-import {SSTORE2} from "solady/utils/SSTORE2.sol";
+import "../src/libraries/SSTORE2Unlimited.sol";
 
 /// @title EthscriptionsWithTestFunctions
 /// @notice Test contract that extends Ethscriptions with additional functions for testing
@@ -10,29 +10,25 @@ import {SSTORE2} from "solady/utils/SSTORE2.sol";
 /// @dev Usage: Deploy this contract instead of regular Ethscriptions in test setup, then cast to this type
 contract EthscriptionsWithTestFunctions is Ethscriptions {
 
-    /// @notice Get the number of content pointers for an ethscription
-    /// @dev Test-only function to inspect storage chunks
-    function getContentPointerCount(bytes32 ethscriptionId) external view returns (uint256) {
+    /// @notice Check if content is stored for an ethscription
+    /// @dev Test-only function to check if content exists
+    function hasContent(bytes32 ethscriptionId) external view returns (bool) {
         Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        return contentPointersBySha[ethscription.contentSha].length;
+        return contentPointerBySha[ethscription.contentSha] != address(0);
     }
 
-    /// @notice Get all content pointers for an ethscription
-    /// @dev Test-only function to inspect SSTORE2 addresses
-    function getContentPointers(bytes32 ethscriptionId) external view returns (address[] memory) {
+    /// @notice Get the content pointer for an ethscription
+    /// @dev Test-only function to inspect SSTORE2 address
+    function getContentPointer(bytes32 ethscriptionId) external view returns (address) {
         Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        return contentPointersBySha[ethscription.contentSha];
+        return contentPointerBySha[ethscription.contentSha];
     }
 
-    /// @notice Read a specific chunk of content
-    /// @dev Test-only function to read individual SSTORE2 chunks
+    /// @notice Read content directly
+    /// @dev Test-only function to read content from SSTORE2
     /// @param ethscriptionId The ethscription ID (L1 tx hash)
-    /// @param index The chunk index to read
-    /// @return The chunk data
-    function readChunk(bytes32 ethscriptionId, uint256 index) external view returns (bytes memory) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        address[] storage pointers = contentPointersBySha[ethscription.contentSha];
-        require(index < pointers.length, "Chunk index out of bounds");
-        return SSTORE2.read(pointers[index]);
+    /// @return The content data
+    function readContent(bytes32 ethscriptionId) external view returns (bytes memory) {
+        return getEthscriptionContent(ethscriptionId);
     }
 }

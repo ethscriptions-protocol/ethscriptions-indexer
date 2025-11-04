@@ -31,7 +31,7 @@ library BytePackLib {
     /// @return data The unpacked bytes data
     function unpack(bytes32 packed) internal pure returns (bytes memory data) {
         uint256 tag = uint8(uint256(packed >> 248));
-        if (tag == 0) revert NotPackedData();
+        if (tag == 0 || tag > 32) revert NotPackedData();
 
         uint256 len = tag - 1;
         data = new bytes(len);
@@ -40,19 +40,20 @@ library BytePackLib {
             assembly {
                 // Store the data (shift left by 8 to remove tag byte)
                 mstore(add(data, 0x20), shl(8, packed))
-                // Zero the memory after the data for hygiene
-                mstore(add(add(data, 0x20), len), 0)
+                // Note: No need to zero memory after the data since new bytes() already zeroes it
+                // and we're only writing up to 31 bytes into a 32-byte word
             }
         }
     }
 
     /// @notice Check if a bytes32 value is packed data
-    /// @dev Returns true if the first byte indicates packed data (non-zero tag)
+    /// @dev Returns true if the first byte indicates packed data (tag between 1-32)
     /// @param value The bytes32 value to check
     /// @return True if the value is packed data, false otherwise
     function isPacked(bytes32 value) internal pure returns (bool) {
-        // Packed data has a non-zero tag byte (1-32) in the first byte
-        return uint8(uint256(value >> 248)) != 0;
+        // Packed data has a tag byte between 1-32 in the first byte
+        uint256 tag = uint8(uint256(value >> 248));
+        return tag > 0 && tag <= 32;
     }
 
     /// @notice Get the length of packed data without unpacking
@@ -61,7 +62,7 @@ library BytePackLib {
     /// @return The length of the packed data (0-31)
     function packedLength(bytes32 packed) internal pure returns (uint256) {
         uint256 tag = uint8(uint256(packed >> 248));
-        if (tag == 0) revert NotPackedData();
+        if (tag == 0 || tag > 32) revert NotPackedData();
         return tag - 1;
     }
 }

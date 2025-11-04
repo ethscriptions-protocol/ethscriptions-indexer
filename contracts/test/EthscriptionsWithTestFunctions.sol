@@ -14,21 +14,21 @@ contract EthscriptionsWithTestFunctions is Ethscriptions {
     /// @notice Check if content is stored for an ethscription
     /// @dev Test-only function to check if content exists
     function hasContent(bytes32 ethscriptionId) external view returns (bool) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
         return contentStorageBySha[ethscription.contentSha] != bytes32(0);
     }
 
     /// @notice Get the content storage value for an ethscription
     /// @dev Test-only function to inspect storage (either packed bytes or SSTORE2 address)
     function getContentStorage(bytes32 ethscriptionId) external view returns (bytes32) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
         return contentStorageBySha[ethscription.contentSha];
     }
 
     /// @notice Get the content pointer for an ethscription (only for SSTORE2 stored content)
     /// @dev Test-only function to inspect SSTORE2 address
     function getContentPointer(bytes32 ethscriptionId) external view returns (address) {
-        Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
         bytes32 stored = contentStorageBySha[ethscription.contentSha];
 
         // Check if it's inline content using BytePackLib
@@ -46,6 +46,6 @@ contract EthscriptionsWithTestFunctions is Ethscriptions {
     /// @param ethscriptionId The ethscription ID (L1 tx hash)
     /// @return The content data
     function readContent(bytes32 ethscriptionId) external view returns (bytes memory) {
-        return getEthscriptionContent(ethscriptionId);
+        return _getEthscriptionContent(ethscriptionId);
     }
 }

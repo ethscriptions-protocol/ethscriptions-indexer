@@ -5,7 +5,7 @@ import "./TestSetup.sol";
 
 contract EthscriptionsWithContentTest is TestSetup {
 
-    function testGetEthscriptionWithContent() public {
+    function testGetEthscription() public {
         // Create a test ethscription first
         bytes32 txHash = bytes32(uint256(12345));
         address creator = address(0x1);
@@ -30,59 +30,93 @@ contract EthscriptionsWithContentTest is TestSetup {
 
         uint256 tokenId = ethscriptions.createEthscription(params);
 
-        // Test the new combined method
-        (Ethscriptions.Ethscription memory ethscription, bytes memory content) = ethscriptions.getEthscriptionWithContent(txHash);
+        // Test the new getEthscription method that returns Ethscription
+        Ethscriptions.Ethscription memory complete = ethscriptions.getEthscription(txHash);
 
         // Verify ethscription data
-        assertEq(ethscription.creator, creator);
-        assertEq(ethscription.initialOwner, initialOwner);
-        assertEq(ethscription.previousOwner, creator);
-        assertEq(ethscription.ethscriptionNumber, tokenId);
-        assertEq(ethscription.mimetype, "text/plain");
-        assertEq(ethscription.esip6, false);
+        assertEq(complete.ethscriptionId, txHash);
+        assertEq(complete.ethscriptionNumber, tokenId);
+        assertEq(complete.creator, creator);
+        assertEq(complete.initialOwner, initialOwner);
+        assertEq(complete.previousOwner, creator);
+        assertEq(complete.currentOwner, initialOwner);
+        assertEq(complete.mimetype, "text/plain");
+        assertEq(complete.esip6, false);
 
         // Verify content
-        assertEq(content, bytes(testContent));
+        assertEq(complete.content, bytes(testContent));
 
-        // Compare with individual method calls to ensure they return the same data
-        Ethscriptions.Ethscription memory ethscriptionSeparate = ethscriptions.getEthscription(txHash);
-        bytes memory contentSeparate = ethscriptions.getEthscriptionContent(txHash);
+        // Test the version without content using the overloaded function
+        Ethscriptions.Ethscription memory withoutContent = ethscriptions.getEthscription(txHash, false);
 
-        // Compare structs (we'll compare individual fields since struct comparison isn't directly supported)
-        assertEq(ethscription.creator, ethscriptionSeparate.creator);
-        assertEq(ethscription.initialOwner, ethscriptionSeparate.initialOwner);
-        assertEq(ethscription.previousOwner, ethscriptionSeparate.previousOwner);
-        assertEq(ethscription.ethscriptionNumber, ethscriptionSeparate.ethscriptionNumber);
-        assertEq(ethscription.createdAt, ethscriptionSeparate.createdAt);
-        assertEq(ethscription.l1BlockNumber, ethscriptionSeparate.l1BlockNumber);
-        assertEq(ethscription.l2BlockNumber, ethscriptionSeparate.l2BlockNumber);
-        assertEq(ethscription.l1BlockHash, ethscriptionSeparate.l1BlockHash);
-
-        // Compare content fields
-        assertEq(ethscription.contentUriHash, ethscriptionSeparate.contentUriHash);
-        assertEq(ethscription.contentSha, ethscriptionSeparate.contentSha);
-        assertEq(ethscription.mimetype, ethscriptionSeparate.mimetype);
-        assertEq(ethscription.esip6, ethscriptionSeparate.esip6);
-
-        // Compare content
-        assertEq(content, contentSeparate);
+        // Verify same metadata but empty content
+        assertEq(withoutContent.ethscriptionId, txHash);
+        assertEq(withoutContent.ethscriptionNumber, tokenId);
+        assertEq(withoutContent.creator, creator);
+        assertEq(withoutContent.currentOwner, initialOwner);
+        assertEq(withoutContent.content.length, 0, "Content should be empty");
     }
 
-    function testGetEthscriptionWithContentNonExistent() public {
+    function testGetEthscriptionByTokenId() public {
+        // Create a test ethscription first
+        bytes32 txHash = bytes32(uint256(67890));
+        address creator = address(0x5);
+        address initialOwner = address(0x6);
+        string memory testContent = "Test by token ID";
+
+        // Create the ethscription
+        vm.prank(creator);
+        Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: txHash,
+            contentUriHash: keccak256(bytes("data:text/plain,Test by token ID")),
+            initialOwner: initialOwner,
+            content: bytes(testContent),
+            mimetype: "text/plain",
+            esip6: true,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "",
+                operation: "",
+                data: ""
+            })
+        });
+
+        uint256 tokenId = ethscriptions.createEthscription(params);
+
+        // Test getting by token ID
+        Ethscriptions.Ethscription memory complete = ethscriptions.getEthscription(tokenId);
+
+        // Verify ethscription data
+        assertEq(complete.ethscriptionId, txHash, "Ethscription ID should match");
+        assertEq(complete.ethscriptionNumber, tokenId, "Token ID should match");
+        assertEq(complete.creator, creator);
+        assertEq(complete.currentOwner, initialOwner);
+        assertEq(complete.content, bytes(testContent));
+
+        // Test without content version by token ID using the overloaded function
+        Ethscriptions.Ethscription memory withoutContent = ethscriptions.getEthscription(tokenId, false);
+        assertEq(withoutContent.ethscriptionId, txHash);
+        assertEq(withoutContent.content.length, 0, "Content should be empty");
+    }
+
+    function testGetEthscriptionNonExistent() public {
         bytes32 nonExistentTxHash = bytes32(uint256(99999));
 
         // Should revert with EthscriptionDoesNotExist
         vm.expectRevert(Ethscriptions.EthscriptionDoesNotExist.selector);
-        ethscriptions.getEthscriptionWithContent(nonExistentTxHash);
+        ethscriptions.getEthscription(nonExistentTxHash);
+
+        // Same for without content version using the overloaded function
+        vm.expectRevert(Ethscriptions.EthscriptionDoesNotExist.selector);
+        ethscriptions.getEthscription(nonExistentTxHash, false);
     }
 
-    function testGetEthscriptionWithContentLargeContent() public {
-        // Test with content that requires multiple SSTORE2 chunks
+    function testGetEthscriptionWithLargeContent() public {
+        // Test with content that's large (testing SSTORE2Unlimited)
         bytes32 txHash = bytes32(uint256(54321));
         address creator = address(0x3);
         address initialOwner = address(0x4);
 
-        // Create content larger than CHUNK_SIZE (24575 bytes)
+        // Create content larger than inline storage (>31 bytes)
         bytes memory largeContent = new bytes(30000);
         for (uint256 i = 0; i < 30000; i++) {
             largeContent[i] = bytes1(uint8(i % 256));
@@ -106,15 +140,68 @@ contract EthscriptionsWithContentTest is TestSetup {
 
         ethscriptions.createEthscription(params);
 
-        // Test the combined method with large content
-        (Ethscriptions.Ethscription memory ethscription, bytes memory content) = ethscriptions.getEthscriptionWithContent(txHash);
+        // Test the getEthscription method with large content
+        Ethscriptions.Ethscription memory complete = ethscriptions.getEthscription(txHash);
 
         // Verify content is correct
-        assertEq(content.length, 30000);
-        assertEq(content, largeContent);
+        assertEq(complete.content.length, 30000);
+        assertEq(complete.content, largeContent);
 
         // Verify ethscription data
-        assertEq(ethscription.creator, creator);
-        assertEq(ethscription.initialOwner, initialOwner);
+        assertEq(complete.creator, creator);
+        assertEq(complete.initialOwner, initialOwner);
+        assertEq(complete.currentOwner, initialOwner);
+
+        // Test without content - should have zero-length content using the overloaded function
+        Ethscriptions.Ethscription memory withoutContent = ethscriptions.getEthscription(txHash, false);
+        assertEq(withoutContent.content.length, 0, "Content should be empty");
+        assertEq(withoutContent.creator, creator);
+        assertEq(withoutContent.currentOwner, initialOwner);
+    }
+
+    function testGetEthscriptionWithSmallContent() public {
+        // Test with content that fits inline (≤31 bytes)
+        bytes32 txHash = bytes32(uint256(11111));
+        address creator = address(0x7);
+        address initialOwner = address(0x8);
+
+        // Create small content (10 bytes)
+        bytes memory smallContent = hex"48656c6c6f576f726c64"; // "HelloWorld"
+
+        // Create the ethscription
+        vm.prank(creator);
+        Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: txHash,
+            contentUriHash: keccak256(bytes("data:text/plain,HelloWorld")),
+            initialOwner: initialOwner,
+            content: smallContent,
+            mimetype: "text/plain",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "",
+                operation: "",
+                data: ""
+            })
+        });
+
+        uint256 tokenId = ethscriptions.createEthscription(params);
+
+        // Test the getEthscription method with small inline content
+        Ethscriptions.Ethscription memory complete = ethscriptions.getEthscription(txHash);
+
+        // Verify content is correct
+        assertEq(complete.content, smallContent);
+        assertEq(complete.content.length, 10);
+
+        // Verify ownership chain
+        assertEq(complete.creator, creator);
+        assertEq(complete.initialOwner, initialOwner);
+        assertEq(complete.currentOwner, initialOwner);
+        assertEq(complete.previousOwner, creator);
+
+        // Test getting by token ID too
+        Ethscriptions.Ethscription memory byTokenId = ethscriptions.getEthscription(tokenId);
+        assertEq(byTokenId.ethscriptionId, txHash);
+        assertEq(byTokenId.content, smallContent);
     }
 }

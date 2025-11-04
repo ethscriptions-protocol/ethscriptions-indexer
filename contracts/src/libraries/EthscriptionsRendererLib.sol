@@ -15,7 +15,7 @@ library EthscriptionsRendererLib {
     /// @param etsc Storage pointer to the ethscription
     /// @param ethscriptionId The ethscription ID (L1 tx hash)
     /// @return JSON string of attributes array
-    function buildAttributes(Ethscriptions.Ethscription storage etsc, bytes32 ethscriptionId)
+    function buildAttributes(Ethscriptions.EthscriptionStorage storage etsc, bytes32 ethscriptionId)
         internal
         view
         returns (string memory)
@@ -56,7 +56,7 @@ library EthscriptionsRendererLib {
     /// @param content The content bytes
     /// @return mediaType Either "image" or "animation_url"
     /// @return mediaUri The data URI for the media
-    function getMediaUri(Ethscriptions.Ethscription storage etsc, bytes memory content)
+    function getMediaUri(Ethscriptions.EthscriptionStorage storage etsc, bytes memory content)
         internal
         view
         returns (string memory mediaType, string memory mediaUri)
@@ -88,7 +88,7 @@ library EthscriptionsRendererLib {
     /// @param content The content bytes
     /// @return The complete base64-encoded data URI
     function buildTokenURI(
-        Ethscriptions.Ethscription storage etsc,
+        Ethscriptions.EthscriptionStorage storage etsc,
         bytes32 ethscriptionId,
         bytes memory content
     ) internal view returns (string memory) {

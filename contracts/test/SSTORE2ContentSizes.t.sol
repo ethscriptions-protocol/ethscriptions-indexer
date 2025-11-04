@@ -186,11 +186,19 @@ contract SSTORE2ContentSizesTest is TestSetup {
         bytes32 txHash,
         bytes memory content,
         string memory label
-    ) private {
-        // Test that content pointer exists and is non-zero
+    ) private view {
+        // Test that content is stored (either inline or via SSTORE2)
         assertTrue(eth.hasContent(txHash), "Content not stored");
+
+        // For small content (<32 bytes), it's stored inline and there's no pointer
+        // For large content (>=32 bytes), it's stored via SSTORE2 with a pointer
         address pointer = eth.getContentPointer(txHash);
-        assertTrue(pointer != address(0), "Invalid content pointer");
+        if (content.length >= 32) {
+            assertTrue(pointer != address(0), "Should have SSTORE2 pointer for large content");
+        } else {
+            // Small content is stored inline, no SSTORE2 pointer
+            assertEq(pointer, address(0), "Should not have pointer for inline content");
+        }
 
         // Test direct read from test functions
         bytes memory directRead = eth.readContent(txHash);

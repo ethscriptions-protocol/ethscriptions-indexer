@@ -38,13 +38,7 @@ contract EthscriptionsWithTestFunctions is Ethscriptions {
         }
 
         // It's a pointer to SSTORE2 contract
-        address pointer = address(uint160(uint256(stored)));
-
-        // Verify it actually has code
-        if (pointer.code.length > 0) {
-            return pointer;
-        }
-        return address(0);
+        return address(uint160(uint256(stored)));
     }
 
     /// @notice Read content directly

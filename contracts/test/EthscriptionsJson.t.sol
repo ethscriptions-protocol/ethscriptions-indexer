@@ -202,26 +202,19 @@ contract EthscriptionsJsonTest is TestSetup {
         vm.prank(creator);
         eth.createEthscription(params);
 
-        // Test readChunk - now it stores raw content only
-        uint256 pointerCount = eth.getContentPointerCount(txHash);
-        assertEq(pointerCount, 3, "Should have 3 chunks"); // 50000 bytes = 3 chunks
+        // Test content storage - now stores everything in a single contract
+        assertTrue(eth.hasContent(txHash), "Should have content stored");
 
-        // Read first chunk
-        bytes memory chunk0 = eth.readChunk(txHash, 0);
-        assertEq(chunk0.length, 24575, "First chunk should be full size");
+        // Get the content pointer
+        address pointer = eth.getContentPointer(txHash);
+        assertTrue(pointer != address(0), "Should have a valid content pointer");
 
-        // Read last chunk
-        bytes memory chunk2 = eth.readChunk(txHash, 2);
-        uint256 totalLength = largeContent.length; // Use largeContent length, not contentUri
-        uint256 expectedLastChunkSize = totalLength - (24575 * 2);
-        assertEq(chunk2.length, expectedLastChunkSize, "Last chunk should be remainder");
+        // Read the entire content (no chunking needed)
+        bytes memory storedContent = eth.readContent(txHash);
+        assertEq(storedContent.length, largeContent.length, "Content length should match");
 
-        // Verify content matches when reassembled from chunks
-        bytes memory reconstructed;
-        for (uint256 i = 0; i < pointerCount; i++) {
-            reconstructed = abi.encodePacked(reconstructed, eth.readChunk(txHash, i));
-        }
-        assertEq(reconstructed, largeContent, "Reconstructed chunks should match original content");
+        // Verify content matches exactly
+        assertEq(storedContent, largeContent, "Stored content should match original content");
 
         // Also verify tokenURI returns valid JSON
         string memory tokenUri = eth.tokenURI(eth.getTokenId(txHash));
@@ -252,8 +245,8 @@ contract EthscriptionsJsonTest is TestSetup {
             false
         ));
         
-        // Verify we have exactly 2 chunks
-        assertEq(eth.getContentPointerCount(txHash), targetChunks, "Should have exactly 2 chunks");
+        // Verify content is stored (no chunking anymore)
+        assertTrue(eth.hasContent(txHash), "Should have content stored");
         
         // Read back and verify in JSON metadata
         string memory retrieved = eth.tokenURI(tokenId);
@@ -291,13 +284,12 @@ contract EthscriptionsJsonTest is TestSetup {
             false
         ));
 
-        // Verify we have 2 chunks (24575 + 5425 bytes for raw content)
-        assertEq(eth.getContentPointerCount(txHash), 2, "Should have 2 chunks");
+        // Verify content is stored (no chunking anymore)
+        assertTrue(eth.hasContent(txHash), "Should have content stored");
 
-        // Verify second chunk has correct size
-        bytes memory secondChunk = eth.readChunk(txHash, 1);
-        uint256 expectedSecondChunkSize = content.length - 24575; // Use content length, not URI
-        assertEq(secondChunk.length, expectedSecondChunkSize, "Second chunk size mismatch");
+        // Verify the full content is stored correctly
+        bytes memory storedContent = eth.readContent(txHash);
+        assertEq(storedContent.length, content.length, "Content length should match");
 
         // Read back and verify in JSON metadata
         string memory retrieved = eth.tokenURI(tokenId);
@@ -326,8 +318,8 @@ contract EthscriptionsJsonTest is TestSetup {
             false
         ));
 
-        // Verify single chunk
-        assertEq(eth.getContentPointerCount(txHash), 1, "Should have 1 chunk");
+        // Verify content is stored
+        assertTrue(eth.hasContent(txHash), "Should have content stored");
 
         // Verify content in JSON metadata
         string memory retrieved = eth.tokenURI(tokenId);
@@ -430,20 +422,21 @@ contract EthscriptionsJsonTest is TestSetup {
         console.log("ESIP6 creation gas (reusing content):", esip6Gas);
         assertTrue(esip6Gas < 1000000, "ESIP6 should save gas by reusing content");
         
-        // Verify both have same pointer count
-        assertEq(eth.getContentPointerCount(txHash1), eth.getContentPointerCount(txHash3), "Should have same pointer count");
+        // Verify both have content stored and use the same pointer
+        assertTrue(eth.hasContent(txHash1) && eth.hasContent(txHash3), "Both should have content");
+        assertEq(eth.getContentPointer(txHash1), eth.getContentPointer(txHash3), "Should share same content pointer");
     }
     
     function test_WorstCaseGas_1MB() public {
-        // Skip this test - HTML viewer generation runs out of memory with 1MB content
-        // This is a known limitation for extremely large content
-        vm.skip(true);
         vm.pauseGasMetering();
         
         // Create 1MB content URI (1,048,576 bytes)
         bytes memory largeContent = new bytes(1048576);
-        for (uint i = 0; i < largeContent.length; i++) {
+        for (uint i = 0; i < largeContent.length;) {
             largeContent[i] = bytes1(uint8(65 + (i % 26))); // Fill with A-Z pattern
+            unchecked {
+                ++i;
+            }
         }
         bytes memory contentUri = abi.encodePacked("data:text/plain;base64,", largeContent);
         

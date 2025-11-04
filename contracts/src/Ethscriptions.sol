@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import "./ERC721EthscriptionsSequentialEnumerableUpgradeable.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import "./libraries/SSTORE2Unlimited.sol";
+import "./libraries/BytePackLib.sol";
 import "./libraries/EthscriptionsRendererLib.sol";
 import "./EthscriptionsProver.sol";
 import "./libraries/Predeploys.sol";
@@ -75,8 +76,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @dev Ethscription ID (L1 tx hash) => Ethscription data
     mapping(bytes32 => Ethscription) internal ethscriptions;
 
-    /// @dev Content SHA => SSTORE2 pointer (single address, no array)
-    mapping(bytes32 => address) public contentPointerBySha;
+    /// @dev Content SHA => packed content (for <32 bytes) or SSTORE2 pointer (for >=32 bytes)
+    mapping(bytes32 => bytes32) public contentStorageBySha;
 
     /// @dev Content URI hash => first ethscription tx hash that used it (for protocol uniqueness check)
     /// @dev bytes32(0) means unused, non-zero means the content URI has been used
@@ -373,7 +374,16 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @notice Get content for an ethscription
     function getEthscriptionContent(bytes32 ethscriptionId) public view returns (bytes memory) {
         Ethscription storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        address pointer = contentPointerBySha[ethscription.contentSha];
+        bytes32 ref = contentStorageBySha[ethscription.contentSha];
+
+        // Check if it's inline content using BytePackLib
+        if (BytePackLib.isPacked(ref)) {
+            return BytePackLib.unpack(ref);
+        }
+
+        // It's a pointer to SSTORE2 contract
+        address pointer = address(uint160(uint256(ref)));
+
         return SSTORE2Unlimited.read(pointer);
     }
 
@@ -496,14 +506,21 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         contentSha = sha256(content);
 
         // Check if content already exists
-        address existingPointer = contentPointerBySha[contentSha];
-        if (existingPointer != address(0)) {
+        bytes32 existing = contentStorageBySha[contentSha];
+        if (existing != bytes32(0)) {
             // Content already stored, just return the SHA
             return contentSha;
         }
 
-        // Content doesn't exist, store it using SSTORE2Unlimited (handles any size)
-        contentPointerBySha[contentSha] = SSTORE2Unlimited.write(content);
+        // Store based on size
+        if (content.length <= 31) {
+            // Pack small content directly into bytes32 (0-31 bytes)
+            contentStorageBySha[contentSha] = BytePackLib.packCalldata(content);
+        } else {
+            // Deploy via SSTORE2 for larger content (32+ bytes)
+            address pointer = SSTORE2Unlimited.write(content);
+            contentStorageBySha[contentSha] = bytes32(uint256(uint160(pointer)));
+        }
 
         return contentSha;
     }

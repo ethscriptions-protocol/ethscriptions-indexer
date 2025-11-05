@@ -18,7 +18,7 @@ RSpec.describe "Collections Protocol", type: :integration do
         "name" => "Test NFTs",
         "symbol" => "TEST",
         "description" => "Test collection",
-        "total_supply" => "10000",
+        "max_supply" => "10000",
         "logo_image_uri" => "https://example.com/logo.png"
       }
 
@@ -48,7 +48,7 @@ RSpec.describe "Collections Protocol", type: :integration do
         "op" => "create_collection",
         "name" => "Minimal Collection",
         "symbol" => "MIN",
-        "total_supply" => "1000"
+        "max_supply" => "1000"
       }
 
       expect_ethscription_success(
@@ -60,13 +60,13 @@ RSpec.describe "Collections Protocol", type: :integration do
       )
     end
 
-    it "handles numeric strings for total_supply (JS compatibility)" do
+    it "handles numeric strings for max_supply (JS compatibility)" do
       collection_data = {
         "p" => "erc-721-ethscriptions-collection",
         "op" => "create_collection",
         "name" => "Big Supply Collection",
         "symbol" => "BIG",
-        "total_supply" => "1000000000000000000" # Large number as string
+        "max_supply" => "1000000000000000000" # Large number as string
       }
 
       expect_ethscription_success(
@@ -284,13 +284,13 @@ RSpec.describe "Collections Protocol", type: :integration do
 
   describe "Contract State Verification" do
     it "creates a collection and verifies it exists in contract" do
-      # Must include ALL CollectionMetadata fields in correct order
+      # Must include ALL CollectionParams fields in correct order
       collection_data = {
         "p" => "erc-721-ethscriptions-collection",
         "op" => "create_collection",
         "name" => "Verified Collection",
         "symbol" => "VRFY",
-        "total_supply" => "100",
+        "max_supply" => "100",
         "description" => "",
         "logo_image_uri" => "",
         "banner_image_uri" => "",
@@ -340,7 +340,7 @@ RSpec.describe "Collections Protocol", type: :integration do
         "p" => "erc-721-ethscriptions-collection",
         "op" => "create_collection",
         "name" => "Invalid",
-        "total_supply" => too_big
+        "max_supply" => too_big
       }
 
       expect_protocol_extraction_failure(
@@ -382,7 +382,7 @@ RSpec.describe "Collections Protocol", type: :integration do
         "op" => "create_collection",
         "name" => "Full Test Collection",
         "symbol" => "FULL",
-        "total_supply" => "10"
+        "max_supply" => "10"
       }
 
       create_results = expect_ethscription_success(

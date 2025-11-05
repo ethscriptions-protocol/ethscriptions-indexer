@@ -9,12 +9,13 @@ class Erc721EthscriptionsCollectionParser
   # Operation schemas defining exact structure and ABI encoding
   OPERATION_SCHEMAS = {
     'create_collection' => {
-      keys: %w[name symbol total_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link],
-      abi_type: '(string,string,uint256,string,string,string,string,string,string,string)',
+      keys: %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link],
+      # Contract expects an extra bytes32 merkleRoot at the end. We append zero when omitted.
+      abi_type: '(string,string,uint256,string,string,string,string,string,string,string,bytes32)',
       validators: {
         'name' => :string,
         'symbol' => :string,
-        'total_supply' => :uint256,
+        'max_supply' => :uint256,
         'description' => :string,
         'logo_image_uri' => :string,
         'banner_image_uri' => :string,
@@ -24,9 +25,19 @@ class Erc721EthscriptionsCollectionParser
         'discord_link' => :string
       }
     },
+    'create_and_add_self' => {
+      keys: %w[metadata item],
+      # ((CollectionParams),(ItemData)) with ItemData including bytes32[] merkle_proof
+      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,bytes32,string,string,(string,string)[],bytes32[]))',
+      validators: {
+        'metadata' => :collection_metadata,
+        'item' => :single_item
+      }
+    },
     'add_items_batch' => {
       keys: %w[collection_id items],
-      abi_type: '(bytes32,(uint256,string,bytes32,string,string,(string,string)[])[])',
+      # Includes per-item merkle_proof (bytes32[]) as the final tuple element
+      abi_type: '(bytes32,(uint256,string,bytes32,string,string,(string,string)[],bytes32[])[])',
       validators: {
         'collection_id' => :bytes32,
         'items' => :items_array
@@ -42,7 +53,8 @@ class Erc721EthscriptionsCollectionParser
     },
     'edit_collection' => {
       keys: %w[collection_id description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link],
-      abi_type: '(bytes32,string,string,string,string,string,string,string)',
+      # Contract includes a bytes32 merkleRoot; append zero when omitted
+      abi_type: '(bytes32,string,string,string,string,string,string,string,bytes32)',
       validators: {
         'collection_id' => :bytes32,
         'description' => :string,
@@ -84,7 +96,8 @@ class Erc721EthscriptionsCollectionParser
   }.freeze
 
   # Item keys for add_items_batch validation
-  ITEM_KEYS = %w[item_index name ethscription_id background_color description attributes].freeze
+  ITEM_KEYS_MIN = %w[item_index name ethscription_id background_color description attributes].freeze
+  ITEM_KEYS_WITH_PROOF = %w[item_index name ethscription_id background_color description attributes merkle_proof].freeze
 
   # Attribute keys for NFT metadata
   ATTRIBUTE_KEYS = %w[trait_type value].freeze
@@ -153,6 +166,8 @@ class Erc721EthscriptionsCollectionParser
     values = case operation
     when 'create_collection'
       build_create_collection_values(validated_data)
+    when 'create_and_add_self'
+      build_create_and_add_self_values(validated_data)
     when 'add_items_batch'
       build_add_items_batch_values(validated_data)
     when 'remove_items'
@@ -243,18 +258,56 @@ class Erc721EthscriptionsCollectionParser
     end
   end
 
+  def validate_single_item(value, field_name)
+    unless value.is_a?(Hash)
+      raise ValidationError, "Expected object for #{field_name}"
+    end
+    validate_item(value)
+  end
+
+  def validate_collection_metadata(value, field_name)
+    unless value.is_a?(Hash)
+      raise ValidationError, "Expected object for #{field_name}"
+    end
+    # Expected keys for metadata (merkle_root optional)
+    expected_min_keys = %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link]
+    unless value.keys == expected_min_keys || value.keys == (expected_min_keys + ['merkle_root'])
+      raise ValidationError, "Invalid metadata keys or order"
+    end
+
+    {
+      name: validate_string(value['name'], 'name'),
+      symbol: validate_string(value['symbol'], 'symbol'),
+      maxSupply: validate_uint256(value['max_supply'], 'max_supply'),
+      description: validate_string(value['description'], 'description'),
+      logoImageUri: validate_string(value['logo_image_uri'], 'logo_image_uri'),
+      bannerImageUri: validate_string(value['banner_image_uri'], 'banner_image_uri'),
+      backgroundColor: validate_string(value['background_color'], 'background_color'),
+      websiteLink: validate_string(value['website_link'], 'website_link'),
+      twitterLink: validate_string(value['twitter_link'], 'twitter_link'),
+      discordLink: validate_string(value['discord_link'], 'discord_link'),
+      merkleRoot: value.key?('merkle_root') ? validate_bytes32(value['merkle_root'], 'merkle_root') : nil
+    }
+  end
+
   def validate_item(item)
     unless item.is_a?(Hash)
       raise ValidationError, "Item must be an object"
     end
 
-    # Check exact key order
-    unless item.keys == ITEM_KEYS
-      raise ValidationError, "Invalid item keys or order. Expected: #{ITEM_KEYS.join(',')}, got: #{item.keys.join(',')}"
-    end
+    # Check exact key order; allow optional merkle_proof
+    has_proof =
+      if item.keys == ITEM_KEYS_WITH_PROOF
+        true
+      elsif item.keys == ITEM_KEYS_MIN
+        false
+      else
+        expected = "[#{ITEM_KEYS_MIN.join(', ')}] or [#{ITEM_KEYS_WITH_PROOF.join(', ')}]"
+        raise ValidationError, "Invalid item keys or order. Expected: #{expected}, got: [#{item.keys.join(', ')}]"
+      end
 
     # Validate each field - return in internal format for encoding
-    {
+    result = {
       itemIndex: validate_uint256(item['item_index'], 'item_index'),
       name: validate_string(item['name'], 'name'),
       ethscriptionId: validate_bytes32(item['ethscription_id'], 'ethscription_id'),
@@ -262,6 +315,11 @@ class Erc721EthscriptionsCollectionParser
       description: validate_string(item['description'], 'description'),
       attributes: validate_attributes_array(item['attributes'], 'attributes')
     }
+
+    # Optional merkle proof; always include as bytes32[] (empty when omitted)
+    result[:merkleProof] = has_proof ? validate_bytes32_array(item['merkle_proof'], 'merkle_proof') : []
+
+    result
   end
 
   def validate_attributes_array(value, field_name)
@@ -297,15 +355,50 @@ class Erc721EthscriptionsCollectionParser
     [
       data['name'],
       data['symbol'],
-      data['total_supply'],
+      data['max_supply'],
       data['description'],
       data['logo_image_uri'],
       data['banner_image_uri'],
       data['background_color'],
       data['website_link'],
       data['twitter_link'],
-      data['discord_link']
+      data['discord_link'],
+      # Append zero merkle root to satisfy contract struct shape
+      ["".ljust(64, '0')].pack('H*')
     ]
+  end
+
+  def build_create_and_add_self_values(data)
+    meta = data['metadata']
+    item = data['item']
+
+    # Metadata tuple with optional merkleRoot
+    merkle_root = meta[:merkleRoot] || ["".ljust(64, '0')].pack('H*')
+    metadata_tuple = [
+      meta[:name],
+      meta[:symbol],
+      meta[:maxSupply],
+      meta[:description],
+      meta[:logoImageUri],
+      meta[:bannerImageUri],
+      meta[:backgroundColor],
+      meta[:websiteLink],
+      meta[:twitterLink],
+      meta[:discordLink],
+      merkle_root
+    ]
+
+    item_tuple = [
+      item[:itemIndex],
+      item[:name],
+      item[:ethscriptionId],
+      item[:backgroundColor],
+      item[:description],
+      item[:attributes],
+      item[:merkleProof]
+    ]
+
+    [metadata_tuple, item_tuple]
   end
 
   def build_add_items_batch_values(data)
@@ -317,7 +410,8 @@ class Erc721EthscriptionsCollectionParser
         item[:ethscriptionId],
         item[:backgroundColor],
         item[:description],
-        item[:attributes]
+        item[:attributes],
+        item[:merkleProof]
       ]
     end
 
@@ -329,7 +423,7 @@ class Erc721EthscriptionsCollectionParser
   end
 
   def build_edit_collection_values(data)
-    [
+    values = [
       data['collection_id'],
       data['description'],
       data['logo_image_uri'],
@@ -339,6 +433,10 @@ class Erc721EthscriptionsCollectionParser
       data['twitter_link'],
       data['discord_link']
     ]
+
+    # Append zero merkle root if not provided in payload (parser schema omits it)
+    values << ["".ljust(64, '0')].pack('H*')
+    values
   end
 
   def build_edit_collection_item_values(data)

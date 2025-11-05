@@ -1,209 +1,121 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-// import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "./ERC721EthscriptionsEnumerableUpgradeable.sol";
-// import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
-// import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./Ethscriptions.sol";
+import "./libraries/Predeploys.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {Base64} from "solady/utils/Base64.sol";
 import "./ERC721EthscriptionsCollectionManager.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 /// @title ERC721EthscriptionsCollection
-/// @notice ERC-721 contract for an Ethscription collection
-/// @dev Maintains internal state but overrides ownerOf to delegate to Ethscriptions contract
-contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeable {
+/// @notice Thin ERC-721 wrapper for Ethscription collections where the manager controls mint/burn
+contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeable, OwnableUpgradeable {
     using LibString for *;
 
-    /// @notice The main Ethscriptions contract
     Ethscriptions public constant ethscriptions = Ethscriptions(Predeploys.ETHSCRIPTIONS);
 
-    /// @notice The collection factory that created this contract
+    /// @notice Factory (manager) that deployed this contract
     address public factory;
-
-    /// @notice The collection ID (Ethscription hash)
-    bytes32 public collectionId;
-    
-    bool public locked;
 
     // Events
     event MemberAdded(bytes32 indexed ethscriptionId, uint256 indexed tokenId);
     event MemberRemoved(bytes32 indexed ethscriptionId, uint256 indexed tokenId);
-    event CollectionLocked();
 
     // Errors
     error NotFactory();
-    error CollectionIsLocked();
+    error UnknownCollection();
     error TransferNotAllowed();
-    error AlreadyMember();
-    error NotMember();
 
     modifier onlyFactory() {
         if (msg.sender != factory) revert NotFactory();
         _;
     }
 
-    modifier notLocked() {
-        if (locked) revert CollectionIsLocked();
-        _;
-    }
-
-    /// @notice Initialize the collection (called once after cloning)
     function initialize(
-        string memory _name,
-        string memory _symbol,
-        bytes32 _collectionId
+        string memory name_,
+        string memory symbol_,
+        address initialOwner_
     ) external initializer {
-        // Initialize parent contracts
-        __ERC721_init(_name, _symbol);
-
-        // Set collection-specific values
-        collectionId = _collectionId;
+        __ERC721_init(name_, symbol_);
+        __Ownable_init(initialOwner_);
         factory = msg.sender;
     }
 
-    /// @notice Add a member to the collection with specific token ID
-    /// @param ethscriptionId The Ethscription to add
-    /// @param tokenId The token ID to mint (same as item index)
-    function addMember(bytes32 ethscriptionId, uint256 tokenId) external onlyFactory notLocked {
-        // Get current owner from Ethscriptions contract
+    /// @notice Lookup collection id via the factory registry
+    function collectionId() public view returns (bytes32) {
+        ERC721EthscriptionsCollectionManager manager = ERC721EthscriptionsCollectionManager(factory);
+        bytes32 id = manager.collectionIdForAddress(address(this));
+        if (id == bytes32(0)) revert UnknownCollection();
+        return id;
+    }
+
+    function addMember(bytes32 ethscriptionId, uint256 tokenId) external onlyFactory {
         address owner = ethscriptions.ownerOf(ethscriptionId);
-
-        // Mint using the specified token ID
         _mint(owner, tokenId);
-
         emit MemberAdded(ethscriptionId, tokenId);
     }
 
-    /// @notice Remove a member from the collection
-    /// @param ethscriptionId The Ethscription to remove
-    /// @param tokenId The token ID to remove
-    function removeMember(bytes32 ethscriptionId, uint256 tokenId) external onlyFactory notLocked {
-        // Get current owner before removal (for the Transfer event)
-        address currentOwner = _ownerOf(tokenId);
+    function removeMember(bytes32 ethscriptionId, uint256 tokenId) external onlyFactory {
+        require(_tokenExists(tokenId), "Token does not exist");
 
-        // Mark token as non-existent in the base contract
+        // Mark token as non-existent (handles enumeration cleanup)
         _setTokenExists(tokenId, false);
 
-        // Emit Transfer to address(0) for indexers to track removal
-        emit Transfer(currentOwner, address(0), tokenId);
+        // Emit burn-style transfer for indexers
+        emit Transfer(ownerOf(tokenId), address(0), tokenId);
+
         emit MemberRemoved(ethscriptionId, tokenId);
     }
 
-    /// @notice Sync ownership for a specific token
-    /// @param tokenId The token to sync
-    /// @param ethscriptionId The ethscription ID for this token
-    function syncOwnership(uint256 tokenId, bytes32 ethscriptionId) external onlyFactory {
-        // Check if token still exists in collection
-        require(_tokenExists(tokenId), "Token does not exist");
-
-        // Get actual owner from Ethscriptions contract
-        address actualOwner = ethscriptions.ownerOf(ethscriptionId);
-
-        // Get recorded owner from our state
-        address recordedOwner = _ownerOf(tokenId);
-
-        // If they differ, update our state
-        if (actualOwner != recordedOwner) {
-            // Use internal _transfer to update state and emit event
-            _transfer(recordedOwner, actualOwner, tokenId);
-        }
-    }
-    
-    /// @notice Lock the collection (freeze it)
-    function lockCollection() external onlyFactory {
-        locked = true;
-        emit CollectionLocked();
+    /// @notice Called by the manager to mirror Ethscription transfers
+    function forceTransfer(address from, address to, uint256 tokenId) external onlyFactory {
+        require(_ownerOf(tokenId) == from, "Unexpected owner");
+        _transfer(from, to, tokenId);
     }
 
-    // Override ownerOf to delegate to Ethscriptions contract
-    function ownerOf(uint256 tokenId)
-        public
-        view
-        override(ERC721EthscriptionsUpgradeable, IERC721)
-        returns (address)
-    {
-        // Check if token exists in collection
-        if (!_tokenExists(tokenId)) {
-            revert("Token does not exist");
-        }
-
-        // Get ethscription ID from manager
-        ERC721EthscriptionsCollectionManager manager = ERC721EthscriptionsCollectionManager(factory);
-        ERC721EthscriptionsCollectionManager.CollectionItem memory item = manager.getCollectionItem(collectionId, tokenId);
-
-        if (item.ethscriptionId == bytes32(0)) {
-            revert("Token not in collection");
-        }
-
-        // Always return the actual owner from Ethscriptions contract
-        return ethscriptions.ownerOf(item.ethscriptionId);
+    /// @notice Let the manager update Ownable owner to match inscription holder
+    function factoryTransferOwnership(address newOwner) external onlyFactory {
+        _transferOwnership(newOwner);
     }
 
-    // Override tokenURI to generate full metadata JSON
     function tokenURI(uint256 tokenId)
         public
         view
         override(ERC721EthscriptionsUpgradeable)
         returns (string memory)
     {
-        if (!_tokenExists(tokenId)) {
-            revert("Token does not exist");
-        }
+        if (!_tokenExists(tokenId)) revert("Token does not exist");
 
-        // Get collection metadata and item data from ERC721EthscriptionsCollectionManager
         ERC721EthscriptionsCollectionManager manager = ERC721EthscriptionsCollectionManager(factory);
-        ERC721EthscriptionsCollectionManager.CollectionItem memory item = manager.getCollectionItem(collectionId, tokenId);
+        ERC721EthscriptionsCollectionManager.CollectionItem memory item =
+            manager.getCollectionItem(collectionId(), tokenId);
+        if (item.ethscriptionId == bytes32(0)) revert("Token not in collection");
 
-        if (item.ethscriptionId == bytes32(0)) {
-            revert("Token not in collection");
-        }
-
-        // Get media URI from Ethscriptions contract
         (string memory mediaType, string memory mediaUri) = ethscriptions.getMediaUri(item.ethscriptionId);
 
-        // Build JSON components
-        string memory jsonStart = string.concat(
-            '{"name":"',
-            item.name.escapeJSON(),
-            '"'
-        );
-
-        // Add description if present
+        string memory jsonStart = string.concat('{"name":"', item.name.escapeJSON(), '"');
         if (bytes(item.description).length > 0) {
-            jsonStart = string.concat(
-                jsonStart,
-                ',"description":"',
-                item.description.escapeJSON(),
-                '"'
-            );
+            jsonStart = string.concat(jsonStart, ',"description":"', item.description.escapeJSON(), '"');
         }
 
-        // Add media field (image or animation_url)
         string memory mediaField = string.concat(
             ',"',
-            mediaType,
+            mediaType.escapeJSON(),
             '":"',
-            mediaUri.escapeJSON(),
+            mediaUri,
             '"'
         );
 
-        // Add background color if present
         string memory bgColor = "";
         if (bytes(item.backgroundColor).length > 0) {
-            bgColor = string.concat(
-                ',"background_color":"',
-                item.backgroundColor.escapeJSON(),
-                '"'
-            );
+            bgColor = string.concat(',"background_color":"', item.backgroundColor.escapeJSON(), '"');
         }
 
-        // Build attributes array from Attribute structs
         string memory attributesJson = ',"attributes":[';
-        for (uint i = 0; i < item.attributes.length; i++) {
+        for (uint256 i = 0; i < item.attributes.length; i++) {
             if (i > 0) attributesJson = string.concat(attributesJson, ',');
             attributesJson = string.concat(
                 attributesJson,
@@ -216,23 +128,13 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
         }
         attributesJson = string.concat(attributesJson, ']');
 
-        // Combine all parts
-        string memory json = string.concat(
-            jsonStart,
-            mediaField,
-            bgColor,
-            attributesJson,
-            '}'
-        );
+        string memory json = string.concat(jsonStart, mediaField, bgColor, attributesJson, '}');
 
-        // Return as base64-encoded data URI
-        return string.concat(
-            "data:application/json;base64,",
-            Base64.encode(bytes(json))
-        );
+        return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
-    // Block external transfers - only internal _transfer is allowed for syncing
+    // --- Transfer/approvals blocked externally ---------------------------------
+
     function transferFrom(address, address, uint256)
         public
         pure
@@ -249,7 +151,6 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
         revert TransferNotAllowed();
     }
 
-    // Block approvals - not needed for non-transferable tokens
     function approve(address, uint256)
         public
         pure

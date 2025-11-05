@@ -25,20 +25,22 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         // Create a collection as Alice
         vm.prank(alice);
 
-        string memory collectionContent = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test Collection","symbol":"TEST","total_supply":"100"}';
+        string memory collectionContent = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test Collection","symbol":"TEST","max_supply":"100"}';
 
-        ERC721EthscriptionsCollectionManager.CollectionMetadata memory metadata = ERC721EthscriptionsCollectionManager.CollectionMetadata({
-            name: "Test Collection",
-            symbol: "TEST",
-            totalSupply: 100,
-            description: "A test collection for unit tests",
-            logoImageUri: "esc://ethscriptions/0x123/data",
-            bannerImageUri: "esc://ethscriptions/0x456/data",
-            backgroundColor: "#FF5733",
-            websiteLink: "https://example.com",
-            twitterLink: "https://twitter.com/test",
-            discordLink: "https://discord.gg/test"
-        });
+        ERC721EthscriptionsCollectionManager.CollectionParams memory metadata =
+            ERC721EthscriptionsCollectionManager.CollectionParams({
+                name: "Test Collection",
+                symbol: "TEST",
+                maxSupply: 100,
+                description: "A test collection for unit tests",
+                logoImageUri: "esc://ethscriptions/0x123/data",
+                bannerImageUri: "esc://ethscriptions/0x456/data",
+                backgroundColor: "#FF5733",
+                websiteLink: "https://example.com",
+                twitterLink: "https://twitter.com/test",
+                discordLink: "https://discord.gg/test",
+                merkleRoot: bytes32(0)
+            });
 
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: COLLECTION_TX_HASH,
@@ -66,12 +68,12 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         // Collection owner is tracked through the original ethscription ownership
 
         // Verify metadata was stored
-        ERC721EthscriptionsCollectionManager.CollectionMetadata memory storedMetadata = collectionsHandler.getCollectionMetadata(COLLECTION_TX_HASH);
-        assertEq(storedMetadata.name, "Test Collection");
-        assertEq(storedMetadata.symbol, "TEST");
-        assertEq(storedMetadata.totalSupply, 100);
-        assertEq(storedMetadata.description, "A test collection for unit tests");
-        assertEq(storedMetadata.backgroundColor, "#FF5733");
+        ERC721EthscriptionsCollectionManager.CollectionRecord memory stored = collectionsHandler.getCollection(COLLECTION_TX_HASH);
+        assertEq(stored.name, "Test Collection");
+        assertEq(stored.symbol, "TEST");
+        assertEq(stored.maxSupply, 100);
+        assertEq(stored.description, "A test collection for unit tests");
+        assertEq(stored.backgroundColor, "#FF5733");
     }
 
     function testAddToCollection() public {
@@ -112,7 +114,8 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
             ethscriptionId: ITEM1_TX_HASH,
             backgroundColor: "#0000FF",
             description: "First test item",
-            attributes: attributes
+            attributes: attributes,
+            merkleProof: new bytes32[](0)
         });
 
         ERC721EthscriptionsCollectionManager.AddItemsBatchOperation memory addOp = ERC721EthscriptionsCollectionManager.AddItemsBatchOperation({
@@ -233,7 +236,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         // Verify item was removed - token should no longer exist
         uint256 tokenId = 0;
-        vm.expectRevert("Token does not exist");
+        vm.expectRevert(abi.encodeWithSignature("ERC721NonexistentToken(uint256)", tokenId));
         collection.ownerOf(tokenId);
     }
 
@@ -309,7 +312,8 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
                 ethscriptionId: itemHashes[i],
                 backgroundColor: "#000000",
                 description: "Test item",
-                attributes: attributes
+                attributes: attributes,
+                merkleProof: new bytes32[](0)
             });
 
             ERC721EthscriptionsCollectionManager.AddItemsBatchOperation memory addOp = ERC721EthscriptionsCollectionManager.AddItemsBatchOperation({
@@ -383,7 +387,8 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
             ethscriptionId: ITEM1_TX_HASH,
             backgroundColor: "#648595",
             description: "A rare ittybit with green eye shadow",
-            attributes: attributes
+            attributes: attributes,
+            merkleProof: new bytes32[](0)
         });
 
         ERC721EthscriptionsCollectionManager.AddItemsBatchOperation memory addOp = ERC721EthscriptionsCollectionManager.AddItemsBatchOperation({
@@ -526,7 +531,8 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
             ethscriptionId: ITEM1_TX_HASH,
             backgroundColor: "#FF5733",
             description: "First item description",
-            attributes: attributes
+            attributes: attributes,
+            merkleProof: new bytes32[](0)
         });
 
         ERC721EthscriptionsCollectionManager.AddItemsBatchOperation memory addOp = ERC721EthscriptionsCollectionManager.AddItemsBatchOperation({

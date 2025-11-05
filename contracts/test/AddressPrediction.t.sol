@@ -41,19 +41,40 @@ contract AddressPredictionTest is TestSetup {
     function testPredictCollectionsAddress() public {
         // Arrange
         bytes32 collectionId = keccak256("collection-1");
+        address creator = makeAddr("creator");
 
-        ERC721EthscriptionsCollectionManager.CollectionMetadata memory metadata = ERC721EthscriptionsCollectionManager.CollectionMetadata({
-            name: "My Collection",
-            symbol: "MYC",
-            totalSupply: 1000,
-            description: "A test collection",
-            logoImageUri: "data:,logo",
-            bannerImageUri: "data:,banner",
-            backgroundColor: "#000000",
-            websiteLink: "https://example.com",
-            twitterLink: "",
-            discordLink: ""
+        // First, create the ethscription that will represent this collection
+        Ethscriptions.CreateEthscriptionParams memory ethscriptionParams = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: collectionId,
+            contentUriHash: keccak256("collection-content"),
+            initialOwner: creator,
+            content: bytes("collection-content"),
+            mimetype: "text/plain",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "",
+                operation: "",
+                data: ""
+            })
         });
+
+        vm.prank(creator);
+        ethscriptions.createEthscription(ethscriptionParams);
+
+        ERC721EthscriptionsCollectionManager.CollectionParams memory metadata =
+            ERC721EthscriptionsCollectionManager.CollectionParams({
+                name: "My Collection",
+                symbol: "MYC",
+                maxSupply: 1000,
+                description: "A test collection",
+                logoImageUri: "data:,logo",
+                bannerImageUri: "data:,banner",
+                backgroundColor: "#000000",
+                websiteLink: "https://example.com",
+                twitterLink: "",
+                discordLink: "",
+                merkleRoot: bytes32(0)
+            });
 
         // Manually compute predicted proxy address
         bytes memory creationCode = abi.encodePacked(type(Proxy).creationCode, abi.encode(address(collectionsHandler)));
@@ -64,7 +85,9 @@ contract AddressPredictionTest is TestSetup {
         collectionsHandler.op_create_collection(collectionId, abi.encode(metadata));
 
         // Assert deployed matches predicted
-        (address actual,,,) = collectionsHandler.collectionState(collectionId);
+        ERC721EthscriptionsCollectionManager.CollectionRecord memory collection =
+            collectionsHandler.getCollection(collectionId);
+        address actual = collection.collectionContract;
         assertEq(actual, predicted, "Predicted collection address should match actual deployed proxy");
     }
 }

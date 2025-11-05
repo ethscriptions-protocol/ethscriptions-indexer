@@ -171,7 +171,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
     describe 'add_items_batch operation' do
       let(:valid_add_items_json) do
-        'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","ethscription_id":"0x' + '2' * 64 + '","background_color":"#FF0000","description":"First item","attributes":[{"trait_type":"Rarity","value":"Common"},{"trait_type":"Level","value":"1"}]}]}'
+        'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","background_color":"#FF0000","description":"First item","attributes":[{"trait_type":"Rarity","value":"Common"},{"trait_type":"Level","value":"1"}]}]}'
       end
 
       it 'encodes add_items_batch correctly' do
@@ -180,9 +180,9 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('add_items_batch'.b)
 
-        # Decode and verify
+        # Decode and verify (ethscription_id removed from ItemData)
         decoded = Eth::Abi.decode(
-          ['(bytes32,(uint256,string,bytes32,string,string,(string,string)[],bytes32[])[])'],
+          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[])[])'],
           result[2]
         )[0]
 
@@ -190,53 +190,52 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
         item = decoded[1][0]
         expect(item[0]).to eq(0) # item_index
-        expect(item[1]).to eq("Item 1")
-        expect(item[2].unpack1('H*')).to eq('2' * 64)
-        expect(item[3]).to eq("#FF0000")
-        expect(item[4]).to eq("First item")
-        expect(item[5]).to eq([["Rarity", "Common"], ["Level", "1"]])
+        expect(item[1]).to eq("Item 1") # name
+        expect(item[2]).to eq("#FF0000") # background_color
+        expect(item[3]).to eq("First item") # description
+        expect(item[4]).to eq([["Rarity", "Common"], ["Level", "1"]]) # attributes
       end
 
       it 'validates item key order' do
         # Wrong key order in item
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"name":"Item 1","item_index":"0","ethscription_id":"0x' + '2' * 64 + '","background_color":"#FF0000","description":"First item","attributes":[]}]}'
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"name":"Item 1","item_index":"0","background_color":"#FF0000","description":"First item","attributes":[]}]}'
         result = described_class.extract(json)
         expect(result).to eq(default_params)
       end
 
       it 'validates attribute key order' do
         # Wrong key order in attributes (value before trait_type)
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","ethscription_id":"0x' + '2' * 64 + '","background_color":"#FF0000","description":"First item","attributes":[{"value":"Common","trait_type":"Rarity"}]}]}'
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","background_color":"#FF0000","description":"First item","attributes":[{"value":"Common","trait_type":"Rarity"}]}]}'
         result = described_class.extract(json)
         expect(result).to eq(default_params)
       end
 
       it 'handles empty attributes array' do
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","ethscription_id":"0x' + '2' * 64 + '","background_color":"","description":"","attributes":[]}]}'
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[]}]}'
         result = described_class.extract(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(bytes32,(uint256,string,bytes32,string,string,(string,string)[],bytes32[])[])'],
+          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[])[])'],
           result[2]
         )[0]
 
         item = decoded[1][0]
-        expect(item[5]).to eq([]) # Empty attributes
+        expect(item[4]).to eq([]) # Empty attributes
       end
 
       it 'handles multiple items' do
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[' +
-          '{"item_index":"0","name":"Item 1","ethscription_id":"0x' + '2' * 64 + '","background_color":"","description":"","attributes":[]},' +
-          '{"item_index":"1","name":"Item 2","ethscription_id":"0x' + '3' * 64 + '","background_color":"","description":"","attributes":[]}' +
+          '{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[]},' +
+          '{"item_index":"1","name":"Item 2","background_color":"","description":"","attributes":[]}' +
           ']}'
         result = described_class.extract(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(bytes32,(uint256,string,bytes32,string,string,(string,string)[],bytes32[])[])'],
+          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[])[])'],
           result[2]
         )[0]
 

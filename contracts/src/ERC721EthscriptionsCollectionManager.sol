@@ -57,7 +57,6 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     struct ItemData {
         uint256 itemIndex;
         string name;
-        bytes32 ethscriptionId;
         string backgroundColor;
         string description;
         Attribute[] attributes;
@@ -67,11 +66,6 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     struct Membership {
         bytes32 collectionId;
         uint256 tokenIdPlusOne; // 0 means not a member
-    }
-
-    struct AddItemsBatchOperation {
-        bytes32 collectionId;
-        ItemData[] items;
     }
 
     struct RemoveItemsOperation {
@@ -102,6 +96,11 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
 
     struct CreateAndAddSelfParams {
         CollectionParams metadata;
+        ItemData item;
+    }
+
+    struct AddSelfToCollectionParams {
+        bytes32 collectionId;
         ItemData item;
     }
 
@@ -147,23 +146,17 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         _createCollection(ethscriptionId, metadata);
     }
 
-    function op_create_and_add_self(bytes32 ethscriptionId, bytes calldata data) external onlyEthscriptions {
+    function op_create_collection_and_add_self(bytes32 ethscriptionId, bytes calldata data) external onlyEthscriptions {
         CreateAndAddSelfParams memory op = abi.decode(data, (CreateAndAddSelfParams));
-        require(op.item.ethscriptionId == ethscriptionId, "Self item must be creator");
 
         _createCollection(ethscriptionId, op.metadata);
-
-        ItemData[] memory items = new ItemData[](1);
-        items[0] = op.item;
-
-        address sender = _getEthscriptionCreator(ethscriptionId);
-        _addItems(AddItemsBatchOperation({collectionId: ethscriptionId, items: items}), sender, ethscriptionId);
+        _addSingleItem(ethscriptionId, ethscriptionId, op.item);
     }
 
-    function op_add_items_batch(bytes32 ethscriptionId, bytes calldata data) public onlyEthscriptions {
-        address sender = _getEthscriptionCreator(ethscriptionId);
-        AddItemsBatchOperation memory addOp = abi.decode(data, (AddItemsBatchOperation));
-        _addItems(addOp, sender, ethscriptionId);
+    function op_add_self_to_collection(bytes32 ethscriptionId, bytes calldata data) external onlyEthscriptions {
+        AddSelfToCollectionParams memory op = abi.decode(data, (AddSelfToCollectionParams));
+
+        _addSingleItem(op.collectionId, ethscriptionId, op.item);
     }
 
     function op_remove_items(bytes32 ethscriptionId, bytes calldata data) external onlyEthscriptions {
@@ -247,29 +240,21 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     }
 
     function onTransfer(bytes32 ethscriptionId, address from, address to) external override onlyEthscriptions {
-        CollectionRecord storage collection = collectionStore[ethscriptionId];
-        if (collection.collectionContract != address(0)) {
-            ERC721EthscriptionsCollection(collection.collectionContract).factoryTransferOwnership(to);
+        if (collectionExists(ethscriptionId)) {
+            ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionStore[ethscriptionId].collectionContract);
+            collection.factoryTransferOwnership(to);
             return;
         }
-
+        
         Membership storage membership = membershipOfEthscription[ethscriptionId];
-        bytes32 parentId = membership.collectionId;
-        if (parentId == bytes32(0)) {
+        
+        if (!collectionExists(membership.collectionId)) {
             return;
         }
+        
+        ERC721EthscriptionsCollection c = ERC721EthscriptionsCollection(collectionStore[membership.collectionId].collectionContract);
 
-        address collectionContract = collectionStore[parentId].collectionContract;
-        if (collectionContract == address(0)) {
-            return;
-        }
-
-        uint256 tokenIdPlusOne = membership.tokenIdPlusOne;
-        if (tokenIdPlusOne == 0) {
-            return;
-        }
-
-        ERC721EthscriptionsCollection(collectionContract).forceTransfer(from, to, tokenIdPlusOne - 1);
+        ERC721EthscriptionsCollection(c).forceTransfer(from, to, membership.tokenIdPlusOne - 1);
     }
 
     // -------------------- Views --------------------
@@ -347,14 +332,17 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         emit CollectionCreated(collectionId, address(collectionProxy), metadata.name, metadata.symbol, metadata.maxSupply);
     }
 
-    function _addItems(
-        AddItemsBatchOperation memory addOp,
-        address sender,
-        bytes32 updateTxHash
+    function _addSingleItem(
+        bytes32 collectionId,
+        bytes32 ethscriptionId,
+        ItemData memory item
     ) internal {
-        CollectionRecord storage collection = collectionStore[addOp.collectionId];
+        
+        CollectionRecord storage collection = collectionStore[collectionId];
         require(collection.collectionContract != address(0), "Collection does not exist");
         require(!collection.locked, "Collection is locked");
+
+        address sender = _getEthscriptionCreator(ethscriptionId);
 
         ERC721EthscriptionsCollection collectionContract =
             ERC721EthscriptionsCollection(collection.collectionContract);
@@ -363,36 +351,30 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
 
         if (collection.maxSupply > 0) {
             uint256 supply = collectionContract.totalSupply();
-            require(supply + addOp.items.length <= collection.maxSupply, "Exceeds max supply");
+            require(supply + 1 <= collection.maxSupply, "Exceeds max supply");
         }
 
-        for (uint256 i = 0; i < addOp.items.length; i++) {
-            ItemData memory item = addOp.items[i];
+        Membership storage membership = membershipOfEthscription[ethscriptionId];
+        require(membership.collectionId == bytes32(0), "Ethscription already in collection");
+        require(collectionItems[collectionId][item.itemIndex].ethscriptionId == bytes32(0), "Item slot taken");
 
-            Membership storage membership = membershipOfEthscription[item.ethscriptionId];
-            require(membership.collectionId == bytes32(0), "Ethscription already in collection");
-            require(collectionItems[addOp.collectionId][item.itemIndex].ethscriptionId == bytes32(0), "Item slot taken");
-
-            if (!senderIsCollectionOwner) {
-                require(collection.merkleRoot != bytes32(0), "Merkle proof required");
-                bytes32 leaf = keccak256(abi.encodePacked(addOp.collectionId, item.ethscriptionId));
-                require(MerkleProof.verify(item.merkleProof, collection.merkleRoot, leaf), "Invalid Merkle proof");
-            }
-
-            _storeCollectionItem(addOp.collectionId, item);
-            membership.collectionId = addOp.collectionId;
-            membership.tokenIdPlusOne = item.itemIndex + 1;
-            collectionContract.addMember(item.ethscriptionId, item.itemIndex);
+        if (!senderIsCollectionOwner && !_inImportMode()) {
+            _verifyItemMerkleProof(item, collection.merkleRoot);
         }
 
-        emit ItemsAdded(addOp.collectionId, addOp.items.length, updateTxHash);
+        _storeCollectionItem(collectionId, ethscriptionId, item);
+        membership.collectionId = collectionId;
+        membership.tokenIdPlusOne = item.itemIndex + 1;
+        collectionContract.addMember(ethscriptionId, item.itemIndex);
+
+        emit ItemsAdded(collectionId, 1, ethscriptionId);
     }
 
-    function _storeCollectionItem(bytes32 collectionId, ItemData memory item) private {
+    function _storeCollectionItem(bytes32 collectionId, bytes32 ethscriptionId, ItemData memory item) private {
         CollectionItem storage newItem = collectionItems[collectionId][item.itemIndex];
         newItem.itemIndex = item.itemIndex;
         newItem.name = item.name;
-        newItem.ethscriptionId = item.ethscriptionId;
+        newItem.ethscriptionId = ethscriptionId;
         newItem.backgroundColor = item.backgroundColor;
         newItem.description = item.description;
 
@@ -413,5 +395,15 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         ERC721EthscriptionsCollection collectionContract = ERC721EthscriptionsCollection(collection.collectionContract);
         address currentOwner = collectionContract.owner();
         require(currentOwner == sender, errorMessage);
+    }
+
+    function _verifyItemMerkleProof(ItemData memory item, bytes32 merkleRoot) private pure {
+        require(merkleRoot != bytes32(0), "Merkle proof required");
+        bytes32 leaf = keccak256(abi.encode(item));
+        require(MerkleProof.verify(item.merkleProof, merkleRoot, leaf), "Invalid Merkle proof");
+    }
+    
+    function _inImportMode() private view returns (bool) {
+        return block.timestamp < Constants.historicalBackfillApproxDoneAt;
     }
 }

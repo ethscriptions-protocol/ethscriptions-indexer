@@ -25,18 +25,37 @@ class Erc721EthscriptionsCollectionParser
         'discord_link' => :string
       }
     },
-    'create_and_add_self' => {
+    # New combined create op name used by the contract; keep legacy alias below
+    'create_collection_and_add_self' => {
       keys: %w[metadata item],
-      # ((CollectionParams),(ItemData)) with ItemData including bytes32[] merkle_proof
+      # ((CollectionParams),(ItemData)) with ethscription_id in ItemData
       abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,bytes32,string,string,(string,string)[],bytes32[]))',
       validators: {
         'metadata' => :collection_metadata,
         'item' => :single_item
       }
     },
+    # Legacy alias retained for backwards compatibility
+    'create_and_add_self' => {
+      keys: %w[metadata item],
+      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,bytes32,string,string,(string,string)[],bytes32[]))',
+      validators: {
+        'metadata' => :collection_metadata,
+        'item' => :single_item
+      }
+    },
+    # New single-item add op; keep legacy batch below for compatibility
+    'add_self_to_collection' => {
+      keys: %w[collection_id item],
+      abi_type: '(bytes32,(uint256,string,bytes32,string,string,(string,string)[],bytes32[]))',
+      validators: {
+        'collection_id' => :bytes32,
+        'item' => :single_item
+      }
+    },
     'add_items_batch' => {
       keys: %w[collection_id items],
-      # Includes per-item merkle_proof (bytes32[]) as the final tuple element
+      # Includes ethscription_id in each item
       abi_type: '(bytes32,(uint256,string,bytes32,string,string,(string,string)[],bytes32[])[])',
       validators: {
         'collection_id' => :bytes32,
@@ -95,7 +114,7 @@ class Erc721EthscriptionsCollectionParser
     }
   }.freeze
 
-  # Item keys for add_items_batch validation
+  # Item keys for validation (includes ethscription_id; item must refer to itself)
   ITEM_KEYS_MIN = %w[item_index name ethscription_id background_color description attributes].freeze
   ITEM_KEYS_WITH_PROOF = %w[item_index name ethscription_id background_color description attributes merkle_proof].freeze
 
@@ -104,11 +123,21 @@ class Erc721EthscriptionsCollectionParser
 
   class ValidationError < StandardError; end
 
-  def self.extract(content_uri)
-    new.extract(content_uri)
+  DEFAULT_ITEMS_PATH = ENV['COLLECTIONS_ITEMS_PATH'] || 'items_by_ethscription.json'
+  DEFAULT_COLLECTIONS_PATH = ENV['COLLECTIONS_META_PATH'] || 'collections_by_name.json'
+
+  def self.extract(content_uri, ethscription_id: nil, import_fallback: false, items_path: DEFAULT_ITEMS_PATH, collections_path: DEFAULT_COLLECTIONS_PATH, cutoff_number: nil)
+    new.extract(content_uri, ethscription_id: ethscription_id, import_fallback: import_fallback, items_path: items_path, collections_path: collections_path, cutoff_number: cutoff_number)
   end
 
-  def extract(content_uri)
+  def extract(content_uri, ethscription_id: nil, import_fallback: false, items_path: DEFAULT_ITEMS_PATH, collections_path: DEFAULT_COLLECTIONS_PATH, cutoff_number: nil)
+    # Import-aware path takes precedence if enabled and id is provided
+    if import_fallback && ethscription_id
+      if (encoded = build_import_encoded_params(ethscription_id.to_s.downcase, items_path: items_path, collections_path: collections_path, cutoff_number: cutoff_number))
+        return encoded
+      end
+    end
+
     return DEFAULT_PARAMS unless valid_data_uri?(content_uri)
 
     begin
@@ -154,6 +183,179 @@ class Erc721EthscriptionsCollectionParser
 
   private
 
+  # -------------------- Import fallback --------------------
+
+  # Returns [protocol, operation, encoded_data] or nil
+  def build_import_encoded_params(id, items_path:, collections_path:, cutoff_number: nil)
+    load_import_data(items_path: items_path, collections_path: collections_path)
+
+    item = @__items_by_id[id]
+    return nil unless item
+
+    if cutoff_number && safe_uint(item['ethscription_number']) > cutoff_number
+      return nil
+    end
+
+    coll_name = item['collection_name']
+    return nil unless coll_name
+
+    leader_id = @__leader_by_collection[coll_name]
+    return nil unless leader_id
+
+    item_index = @__zero_index_by_id[id] || 0
+
+    if id == leader_id
+      metadata = @__collections_by_name[coll_name]
+      return nil unless metadata
+      operation = 'create_collection_and_add_self'
+      schema = OPERATION_SCHEMAS[operation]
+      encoding_data = {
+        'metadata' => build_metadata_object(metadata),
+        'item' => build_item_object(item: item, item_id: id, item_index: item_index)
+      }
+      encoded_data = encode_operation(operation, encoding_data, schema)
+      ['erc-721-ethscriptions-collection'.b, operation.b, encoded_data.b]
+    else
+      operation = 'add_self_to_collection'
+      schema = OPERATION_SCHEMAS[operation]
+      encoding_data = {
+        'collection_id' => to_bytes32_hex(leader_id),
+        'item' => build_item_object(item: item, item_id: id, item_index: item_index)
+      }
+      encoded_data = encode_operation(operation, encoding_data, schema)
+      ['erc-721-ethscriptions-collection'.b, operation.b, encoded_data.b]
+    end
+  end
+
+  def load_import_data(items_path:, collections_path:)
+    # Memoize parsed JSON and derived leader/index maps
+    if @__loaded_items_path == items_path && @__loaded_collections_path == collections_path && @__items_by_id
+      return
+    end
+
+    items = JSON.parse(File.read(items_path))
+    collections = JSON.parse(File.read(collections_path))
+
+    @__items_by_id = {}
+    items.each { |k, v| @__items_by_id[k.to_s.downcase] = v }
+    @__collections_by_name = collections
+
+    # Group items by collection and derive leader (min ethscription_number)
+    groups = Hash.new { |h, k| h[k] = [] }
+    @__items_by_id.each do |iid, it|
+      cname = it['collection_name']
+      next unless cname.is_a?(String) && !cname.empty?
+      num = safe_uint(it['ethscription_number'])
+      groups[cname] << [iid, num]
+    end
+
+    @__leader_by_collection = {}
+    groups.each do |cname, pairs|
+      next if pairs.empty?
+      @__leader_by_collection[cname] = pairs.min_by { |_id, num| num }[0]
+    end
+
+    # Normalize item indices to zero-based
+    @__zero_index_by_id = {}
+    groups.each do |_cname, pairs|
+      explicit = pairs.map { |(iid, _)| [iid, @__items_by_id[iid]['index']] }
+      explicit_indices = explicit.filter_map { |_iid, idx| idx if idx.is_a?(Integer) }
+      if explicit_indices.size == pairs.size
+        min_idx = explicit_indices.min
+        offset = (min_idx == 0) ? 0 : 1
+        explicit.each { |iid, idx| @__zero_index_by_id[iid] = [idx - offset, 0].max }
+      else
+        pairs.sort_by { |_iid, num| num }.each_with_index { |(iid, _), i| @__zero_index_by_id[iid] = i }
+      end
+    end
+
+    @__loaded_items_path = items_path
+    @__loaded_collections_path = collections_path
+  end
+
+  # Build ordered JSON objects to match strict parser expectations
+  def build_metadata_object(meta)
+    name = safe_string(meta['name'])
+    symbol = safe_string(meta['symbol'] || meta['slug'] || meta['name'])
+    max_supply = safe_uint_string(meta['max_supply'] || meta['total_supply'] || 0)
+    description = safe_string(meta['description'])
+    logo_image_uri = safe_string(meta['logo_image_uri'])
+    banner_image_uri = safe_string(meta['banner_image_uri'])
+    background_color = safe_string(meta['background_color'])
+    website_link = safe_string(meta['website_link'])
+    twitter_link = safe_string(meta['twitter_link'])
+    discord_link = safe_string(meta['discord_link'])
+
+    OrderedHash[
+      'name', name,
+      'symbol', symbol,
+      'max_supply', max_supply,
+      'description', description,
+      'logo_image_uri', logo_image_uri,
+      'banner_image_uri', banner_image_uri,
+      'background_color', background_color,
+      'website_link', website_link,
+      'twitter_link', twitter_link,
+      'discord_link', discord_link
+    ]
+  end
+
+  def build_item_object(item:, item_id:, item_index:)
+    attrs = Array(item['attributes']).map do |a|
+      OrderedHash['trait_type', safe_string(a['trait_type']), 'value', safe_string(a['value'])]
+    end
+
+    OrderedHash[
+      'item_index', safe_uint_string(item_index),
+      'name', safe_string(item['name']),
+      'ethscription_id', to_bytes32_hex(item_id),
+      'background_color', safe_string(item['background_color']),
+      'description', safe_string(item['description']),
+      'attributes', attrs
+    ]
+  end
+
+  def to_bytes32_hex(val)
+    h = safe_string(val).downcase
+    raise ValidationError, "Invalid bytes32 hex: #{val}" unless h.match?(/\A0x[0-9a-f]{64}\z/)
+    h
+  end
+
+  # Integer coercion helper for import computations
+  def safe_uint(val)
+    case val
+    when Integer then val
+    when String then (val =~ /\A\d+\z/ ? val.to_i : 0)
+    else 0
+    end
+  end
+
+  def safe_uint_string(val)
+    n = case val
+        when Integer then val
+        when String then (val =~ /\A\d+\z/ ? val.to_i : 0)
+        else 0
+        end
+    n = 0 if n.negative?
+    n.to_s
+  end
+
+  def safe_string(val)
+    val.nil? ? '' : val.to_s
+  end
+
+  def ordered_json(pairs)
+    JSON.generate(OrderedHash[pairs.to_a.flatten])
+  end
+
+  class OrderedHash < ::Hash
+    def self.[](*args)
+      h = new
+      args.each_slice(2) { |k, v| h[k] = v }
+      h
+    end
+  end
+
   def valid_data_uri?(uri)
     DataUri.valid?(uri)
   end
@@ -166,10 +368,12 @@ class Erc721EthscriptionsCollectionParser
     values = case operation
     when 'create_collection'
       build_create_collection_values(validated_data)
-    when 'create_and_add_self'
+    when 'create_collection_and_add_self', 'create_and_add_self'
       build_create_and_add_self_values(validated_data)
     when 'add_items_batch'
       build_add_items_batch_values(validated_data)
+    when 'add_self_to_collection'
+      build_add_self_to_collection_values(validated_data)
     when 'remove_items'
       build_remove_items_values(validated_data)
     when 'edit_collection'
@@ -399,6 +603,20 @@ class Erc721EthscriptionsCollectionParser
     ]
 
     [metadata_tuple, item_tuple]
+  end
+
+  def build_add_self_to_collection_values(data)
+    item = data['item']
+    item_tuple = [
+      item[:itemIndex],
+      item[:name],
+      item[:ethscriptionId],
+      item[:backgroundColor],
+      item[:description],
+      item[:attributes],
+      item[:merkleProof]
+    ]
+    [data['collection_id'], item_tuple]
   end
 
   def build_add_items_batch_values(data)

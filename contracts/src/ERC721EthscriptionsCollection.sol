@@ -60,12 +60,12 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
 
     function removeMember(bytes32 ethscriptionId, uint256 tokenId) external onlyFactory {
         require(_tokenExists(tokenId), "Token does not exist");
-
+        address owner = ownerOf(tokenId);
         // Mark token as non-existent (handles enumeration cleanup)
         _setTokenExists(tokenId, false);
 
         // Emit burn-style transfer for indexers
-        emit Transfer(ownerOf(tokenId), address(0), tokenId);
+        emit Transfer(owner, address(0), tokenId);
 
         emit MemberRemoved(ethscriptionId, tokenId);
     }
@@ -103,9 +103,9 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
 
         string memory mediaField = string.concat(
             ',"',
-            mediaType.escapeJSON(),
+            mediaType,
             '":"',
-            mediaUri,
+            mediaUri.escapeJSON(),
             '"'
         );
 

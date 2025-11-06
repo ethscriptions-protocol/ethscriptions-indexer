@@ -29,25 +29,27 @@ class ProtocolParser
     params = Erc20FixedDenominationParser.extract(content_uri)
 
     # Check if extraction succeeded (returns non-default params)
-    if params != TOKEN_DEFAULT_PARAMS
-      {
-        type: :erc20_fixed_denomination,
-        protocol: 'erc-20-fixed-denomination',
-        operation: params[0], # 'deploy' or 'mint'
-        params: params,
-        encoded_params: encode_token_params(params)
-      }
-    else
-      nil
-    end
+    return nil if params == TOKEN_DEFAULT_PARAMS
+
+    {
+      type: :erc20_fixed_denomination,
+      protocol: 'erc-20-fixed-denomination',
+      operation: params[0], # 'deploy' or 'mint'
+      params: params,
+      encoded_params: Erc20FixedDenominationParser.structured_params(params)
+    }
   end
 
   def self.try_collections_parser(content_uri, ethscription_id: nil)
     # Erc721EthscriptionsCollectionParser returns [''.b, ''.b, ''.b] if no match
-    protocol, operation, encoded_data = Erc721EthscriptionsCollectionParser.extract(
+    params = Erc721EthscriptionsCollectionParser.extract(
       content_uri,
       ethscription_id: ethscription_id
     )
+
+    return nil if params == COLLECTIONS_DEFAULT_PARAMS
+
+    protocol, operation, encoded_data = params
 
     # Check if extraction succeeded
     if protocol != ''.b && operation != ''.b
@@ -57,34 +59,6 @@ class ProtocolParser
         operation: operation,
         params: nil, # Collections doesn't return decoded params
         encoded_params: encoded_data
-      }
-    else
-      nil
-    end
-  end
-
-  def self.encode_token_params(params)
-    # Convert token params to format expected by contracts
-    # params format: [op, protocol, tick, val1, val2, val3]
-    op, _protocol, tick, val1, val2, val3 = params
-
-    case op
-    when 'deploy'.b
-      # For deploy: tick, max, lim
-      {
-        op: op,
-        tick: tick,
-        max: val1,
-        lim: val2,
-        amt: 0
-      }
-    when 'mint'.b
-      # For mint: tick, id, amt
-      {
-        op: op,
-        tick: tick,
-        id: val1,
-        amt: val3
       }
     else
       nil
@@ -104,7 +78,7 @@ class ProtocolParser
       protocol = result[:protocol].b
       operation = result[:operation]
       # For tokens, encode the params properly
-      encoded_data = encode_token_data(result[:params])
+      encoded_data = Erc20FixedDenominationParser.encode_calldata(result[:params])
       [protocol, operation, encoded_data]
     elsif result[:type] == :erc721_ethscriptions_collection
       # Collections protocol - already has encoded data
@@ -115,26 +89,4 @@ class ProtocolParser
     end
   end
 
-  # Encode token params as bytes for contract consumption
-  def self.encode_token_data(params)
-    # params format: [op, protocol, tick, val1, val2, val3]
-    op, _protocol, tick, val1, val2, val3 = params
-
-    # Encode based on operation type (operation is passed separately now)
-    # Use tuple encoding for struct compatibility with contracts
-    # IMPORTANT: Field order must match ERC20FixedDenominationManager's struct definitions!
-    if op == 'deploy'.b
-      # DeployOperation struct: tick, maxSupply, mintAmount
-      # Our params: tick, max (val1), lim (val2)
-      # So: tick, maxSupply=val1, mintAmount=val2
-      Eth::Abi.encode(['(string,uint256,uint256)'], [[tick.b, val1, val2]])
-    elsif op == 'mint'.b
-      # MintOperation struct: tick, id, amount
-      # Our params: tick, id (val1), amt (val3)
-      # So: tick, id=val1, amount=val3
-      Eth::Abi.encode(['(string,uint256,uint256)'], [[tick.b, val1, val3]])
-    else
-      ''.b
-    end
-  end
 end

@@ -84,7 +84,7 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
         "op" => "create_collection",
         "name" => "Test NFT",
         "symbol" => "TNFT",
-        "total_supply" => "100",
+        "max_supply" => "100",
         "description" => "Test",
         "logo_image_uri" => "",
         "banner_image_uri" => "",
@@ -164,7 +164,7 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
         "op" => "create_collection",
         "name" => "Test Batch Collection",
         "symbol" => "TBATCH",
-        "total_supply" => "100",
+        "max_supply" => "100",
         "description" => "Test batch collection",
         "logo_image_uri" => "",
         "banner_image_uri" => "",
@@ -191,89 +191,96 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
       collection_id = results[:ethscription_ids].first
       expect(collection_id).to be_present
 
-      # Now create the ethscriptions that will be added to the collection
-      # Use the same direct pattern for creating items
+      # Now create the ethscriptions that add themselves to the collection
+      # Item 1: Create ethscription with add_self_to_collection
+      item1_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "add_self_to_collection",
+        "collection_id" => collection_id,
+        "item" => {
+          "item_index" => "0",
+          "name" => "Test Item #0",
+          "background_color" => "#648595",
+          "description" => "First test item with multiple attributes",
+          "attributes" => [
+            {"trait_type" => "Type", "value" => "Common"},
+            {"trait_type" => "Color", "value" => "Blue"},
+            {"trait_type" => "Rarity", "value" => "1"},
+            {"trait_type" => "Power", "value" => "100"}
+          ],
+          "merkle_proof" => []
+        }
+      }
+
       item1_spec = create_input(
         creator: alice,
         to: alice,
-        data_uri: "data:,Batch Item 1 content"
+        data_uri: "data:," + item1_data.to_json
       )
 
       item1_results = import_l1_block([item1_spec], esip_overrides: { esip6_is_enabled: true })
       item1_id = item1_results[:ethscription_ids].first
       expect(item1_id).to be_present, "Item 1 should be created"
 
+      # Item 2: Create ethscription with add_self_to_collection
+      item2_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "add_self_to_collection",
+        "collection_id" => collection_id,
+        "item" => {
+          "item_index" => "1",
+          "name" => "Test Item #1",
+          "background_color" => "#FF5733",
+          "description" => "Second test item with different attributes",
+          "attributes" => [
+            {"trait_type" => "Type", "value" => "Rare"},
+            {"trait_type" => "Color", "value" => "Red"},
+            {"trait_type" => "Rarity", "value" => "5"},
+            {"trait_type" => "Power", "value" => "500"}
+          ],
+          "merkle_proof" => []
+        }
+      }
+
       item2_spec = create_input(
         creator: alice,
         to: alice,
-        data_uri: "data:,Batch Item 2 content"
+        data_uri: "data:," + item2_data.to_json
       )
 
       item2_results = import_l1_block([item2_spec], esip_overrides: { esip6_is_enabled: true })
       item2_id = item2_results[:ethscription_ids].first
       expect(item2_id).to be_present, "Item 2 should be created"
 
-      # Complex nested structure matching real-world usage
-      batch_data = {
-        "p" => "erc-721-ethscriptions-collection",
-        "op" => "add_items_batch",
-        "collection_id" => collection_id,
-        "items" => [
-          {
-            "item_index" => "0",
-            "name" => "Test Item #0",
-            "ethscription_id" => item1_id,
-            "background_color" => "#648595",
-            "description" => "First test item with multiple attributes",
-            "attributes" => [
-              {"trait_type" => "Type", "value" => "Common"},
-              {"trait_type" => "Color", "value" => "Blue"},
-              {"trait_type" => "Rarity", "value" => "1"},
-              {"trait_type" => "Power", "value" => "100"}
-            ]
-          },
-          {
-            "item_index" => "1",
-            "name" => "Test Item #1",
-            "ethscription_id" => item2_id,
-            "background_color" => "#FF5733",
-            "description" => "Second test item with different attributes",
-            "attributes" => [
-              {"trait_type" => "Type", "value" => "Rare"},
-              {"trait_type" => "Color", "value" => "Red"},
-              {"trait_type" => "Rarity", "value" => "5"},
-              {"trait_type" => "Power", "value" => "500"}
-            ]
-          }
-        ]
-      }
+      # Validate first item addition
+      expect(item1_results[:ethscription_ids]).not_to be_empty, "Should create first item ethscription"
+      expect(item1_results[:l2_receipts]).not_to be_empty, "Should have L2 receipt for item 1"
 
-      # Create the add_items_batch transaction using the direct pattern
-      batch_spec = create_input(
-        creator: alice,
-        to: dummy_recipient,
-        data_uri: "data:," + batch_data.to_json
-      )
-
-      batch_results = import_l1_block([batch_spec], esip_overrides: { esip6_is_enabled: true })
-
-      # Validate ethscription creation
-      expect(batch_results[:ethscription_ids]).not_to be_empty, "Should create batch ethscription"
-      batch_id = batch_results[:ethscription_ids].first
-      expect(batch_id).to be_present
-
-      # Parse events to validate protocol execution
+      # Parse events for item 1
       require_relative '../../lib/protocol_event_reader'
-      events = ProtocolEventReader.parse_receipt_events(batch_results[:l2_receipts].first)
+      item1_events = ProtocolEventReader.parse_receipt_events(item1_results[:l2_receipts].first)
 
-      # Check for ItemsAdded event
-      items_added_event = events.find { |e| e[:event] == 'ItemsAdded' }
-      expect(items_added_event).not_to be_nil, "Should emit ItemsAdded event"
-      expect(items_added_event[:count]).to eq(2), "Should add 2 items"
+      item1_added_event = item1_events.find { |e| e[:event] == 'ItemsAdded' }
+      expect(item1_added_event).not_to be_nil, "Should emit ItemsAdded event for item 1"
+      expect(item1_added_event[:count]).to eq(1), "Should add 1 item"
 
-      # Check for protocol success
-      protocol_success = events.any? { |e| e[:event] == 'ProtocolHandlerSuccess' }
-      expect(protocol_success).to eq(true), "Protocol operation should succeed"
+      # Validate second item addition
+      expect(item2_results[:ethscription_ids]).not_to be_empty, "Should create second item ethscription"
+      expect(item2_results[:l2_receipts]).not_to be_empty, "Should have L2 receipt for item 2"
+
+      # Parse events for item 2
+      item2_events = ProtocolEventReader.parse_receipt_events(item2_results[:l2_receipts].first)
+
+      item2_added_event = item2_events.find { |e| e[:event] == 'ItemsAdded' }
+      expect(item2_added_event).not_to be_nil, "Should emit ItemsAdded event for item 2"
+      expect(item2_added_event[:count]).to eq(1), "Should add 1 item"
+
+      # Check for protocol success for both items
+      item1_success = item1_events.any? { |e| e[:event] == 'ProtocolHandlerSuccess' }
+      expect(item1_success).to eq(true), "Protocol operation should succeed for item 1"
+
+      item2_success = item2_events.any? { |e| e[:event] == 'ProtocolHandlerSuccess' }
+      expect(item2_success).to eq(true), "Protocol operation should succeed for item 2"
 
       # Validate collection state updated
       collection_state = get_collection_state(collection_id)

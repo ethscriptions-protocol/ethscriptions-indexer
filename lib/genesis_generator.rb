@@ -91,11 +91,9 @@ class GenesisGenerator
     end
     
     should_perform_genesis_import = ENV.fetch('PERFORM_GENESIS_IMPORT', 'true') == 'true'
-    # Collections default to true in forge (for tests), but we disable in dev/prod via env files
-    enable_collections = ENV.fetch('ENABLE_COLLECTIONS', 'false') == 'true'
 
     # Build the forge script command
-    cmd = "cd #{contracts_dir} && PERFORM_GENESIS_IMPORT=#{should_perform_genesis_import} ENABLE_COLLECTIONS=#{enable_collections} forge script '#{script_path}:L2Genesis'"
+    cmd = "cd #{contracts_dir} && PERFORM_GENESIS_IMPORT=#{should_perform_genesis_import} forge script '#{script_path}:L2Genesis'"
     
     log "Executing: #{cmd}"
     log nil

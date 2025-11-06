@@ -5,21 +5,17 @@ class ProtocolExtractor
   COLLECTIONS_DEFAULT_PARAMS = Erc721EthscriptionsCollectionParser::DEFAULT_PARAMS
   GENERIC_DEFAULT_PARAMS = GenericProtocolExtractor::DEFAULT_PARAMS
 
-  def self.extract(content_uri)
-    return nil unless content_uri.is_a?(String)
-
-    # Centralized validation: must be a valid data URI and JSON payload
-    return nil unless DataUri.valid?(content_uri)
-    begin
-      payload = DataUri.new(content_uri).decoded_data
-    rescue StandardError
-      return nil
-    end
-    return nil unless payload.start_with?('{')
+  def self.extract(content_uri, ethscription_id: nil)
+    # begin
+    #   payload = DataUri.new(content_uri).decoded_data
+    # rescue StandardError
+    #   return nil
+    # end
+    # return nil unless payload.start_with?('{')
 
     # Try extractors in order of strictness
     # 1. Token protocol (most strict - exact character position matters)
-    # 2. Collections protocol (strict - exact key order required) - gated by ENABLE_COLLECTIONS
+    # 2. Collections protocol (strict - exact key order required)
     # 3. Generic protocol (flexible - for all other protocols) - gated by ENABLE_GENERIC_PROTOCOLS
 
     # Try token extractor first (most strict)
@@ -27,10 +23,8 @@ class ProtocolExtractor
     return result if result
 
     # Try collections extractor next (if enabled)
-    if ENV['ENABLE_COLLECTIONS'] == 'true'
-      result = try_collections_extractor(content_uri)
-      return result if result
-    end
+    result = try_collections_extractor(content_uri, ethscription_id: ethscription_id)
+    return result if result
 
     # Try generic extractor last (if enabled)
     if ENV['ENABLE_GENERIC_PROTOCOLS'] == 'true'
@@ -63,9 +57,12 @@ class ProtocolExtractor
     end
   end
 
-  def self.try_collections_extractor(content_uri)
+  def self.try_collections_extractor(content_uri, ethscription_id: nil)
     # Erc721EthscriptionsCollectionParser returns [''.b, ''.b, ''.b] if no match
-    protocol, operation, encoded_data = Erc721EthscriptionsCollectionParser.extract(content_uri)
+    protocol, operation, encoded_data = Erc721EthscriptionsCollectionParser.extract(
+      content_uri,
+      ethscription_id: ethscription_id
+    )
 
     # Check if extraction succeeded
     if protocol != ''.b && operation != ''.b
@@ -129,8 +126,8 @@ class ProtocolExtractor
 
   # Get protocol data formatted for L2 calldata
   # Returns [protocol, operation, encoded_data] for contract consumption
-  def self.for_calldata(content_uri)
-    result = extract(content_uri)
+  def self.for_calldata(content_uri, ethscription_id: nil)
+    result = extract(content_uri, ethscription_id: ethscription_id)
 
     if result.nil?
       # No protocol detected - return empty protocol params

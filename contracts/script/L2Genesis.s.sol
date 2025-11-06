@@ -230,18 +230,8 @@ contract L2Genesis is Script {
         ethscriptions.registerProtocol("erc-20-fixed-denomination", Predeploys.ERC20_FIXED_DENOMINATION_MANAGER);
         console.log("Registered erc-20-fixed-denomination protocol handler:", Predeploys.ERC20_FIXED_DENOMINATION_MANAGER);
 
-        // Check environment variable for collections
-        // Default to true so forge tests work (they don't go through genesis_generator.rb)
-        // Production explicitly sets ENABLE_COLLECTIONS=false
-        bool enableCollections = vm.envOr("ENABLE_COLLECTIONS", true);
-
-        if (enableCollections) {
-            // Register the collections protocol handler for ERC-721 Ethscriptions collections
-            ethscriptions.registerProtocol("erc-721-ethscriptions-collection", Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER);
-            console.log("Registered erc-721-ethscriptions-collection protocol handler:", Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER);
-        } else {
-            console.log("Collections protocol not registered (ENABLE_COLLECTIONS=false)");
-        }
+        ethscriptions.registerProtocol("erc-721-ethscriptions-collection", Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER);
+        console.log("Registered erc-721-ethscriptions-collection protocol handler:", Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER);
     }
 
     /// @notice Deploy L1Block contract (stores L1 block attributes)

@@ -169,79 +169,55 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       end
     end
 
-    describe 'add_items_batch operation' do
-      let(:valid_add_items_json) do
-        'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","background_color":"#FF0000","description":"First item","attributes":[{"trait_type":"Rarity","value":"Common"},{"trait_type":"Level","value":"1"}]}]}'
-      end
+    describe 'add_self_to_collection operation' do
+      let(:collection_id_hex) { '0x' + '1' * 64 }
+      let(:current_item_id) { '0x' + 'a' * 64 }
 
-      it 'encodes add_items_batch correctly' do
-        result = described_class.extract(valid_add_items_json)
+      it 'encodes add_self_to_collection correctly' do
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"#FF0000","description":"First item","attributes":[{"trait_type":"Rarity","value":"Common"},{"trait_type":"Level","value":"1"}],"merkle_proof":[]}}'
+
+        result = described_class.extract(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
-        expect(result[1]).to eq('add_items_batch'.b)
+        expect(result[1]).to eq('add_self_to_collection'.b)
 
-        # Decode and verify (ethscription_id removed from ItemData)
         decoded = Eth::Abi.decode(
-          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[])[])'],
+          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[]))'],
           result[2]
         )[0]
 
-        expect(decoded[0].unpack1('H*')).to eq('1' * 64)
+        expect(decoded[0].unpack1('H*')).to eq(collection_id_hex[2..])
 
-        item = decoded[1][0]
+        item = decoded[1]
         expect(item[0]).to eq(0) # item_index
-        expect(item[1]).to eq("Item 1") # name
-        expect(item[2]).to eq("#FF0000") # background_color
-        expect(item[3]).to eq("First item") # description
+        expect(item[1]).to eq('Item 1') # name
+        expect(item[2]).to eq('#FF0000') # background_color
+        expect(item[3]).to eq('First item') # description
         expect(item[4]).to eq([["Rarity", "Common"], ["Level", "1"]]) # attributes
-      end
-
-      it 'validates item key order' do
-        # Wrong key order in item
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"name":"Item 1","item_index":"0","background_color":"#FF0000","description":"First item","attributes":[]}]}'
-        result = described_class.extract(json)
-        expect(result).to eq(default_params)
+        expect(item[5]).to eq([]) # merkle_proof
       end
 
       it 'validates attribute key order' do
         # Wrong key order in attributes (value before trait_type)
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","background_color":"#FF0000","description":"First item","attributes":[{"value":"Common","trait_type":"Rarity"}]}]}'
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"#FF0000","description":"First item","attributes":[{"value":"Common","trait_type":"Rarity"}],"merkle_proof":[]}}'
         result = described_class.extract(json)
         expect(result).to eq(default_params)
       end
 
       it 'handles empty attributes array' do
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[]}]}'
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[],"merkle_proof":[]}}'
         result = described_class.extract(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[])[])'],
+          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[]))'],
           result[2]
         )[0]
 
-        item = decoded[1][0]
+        item = decoded[1]
         expect(item[4]).to eq([]) # Empty attributes
-      end
-
-      it 'handles multiple items' do
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[' +
-          '{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[]},' +
-          '{"item_index":"1","name":"Item 2","background_color":"","description":"","attributes":[]}' +
-          ']}'
-        result = described_class.extract(json)
-
-        expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
-
-        decoded = Eth::Abi.decode(
-          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[])[])'],
-          result[2]
-        )[0]
-
-        expect(decoded[1].length).to eq(2)
-        expect(decoded[1][0][0]).to eq(0) # First item index
-        expect(decoded[1][1][0]).to eq(1) # Second item index
+        expect(item[5]).to eq([]) # Empty merkle_proof
       end
     end
 
@@ -316,21 +292,6 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         # Single bytes32, not a tuple
         decoded = Eth::Abi.decode(['bytes32'], result[2])[0]
         expect(decoded.unpack1('H*')).to eq('1' * 64)
-      end
-    end
-
-    describe 'sync_ownership operation' do
-      it 'encodes sync_ownership correctly' do
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"sync_ownership","collection_id":"0x' + '1' * 64 + '","ethscription_ids":["0x' + '2' * 64 + '"]}'
-        result = described_class.extract(json)
-
-        expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
-        expect(result[1]).to eq('sync_ownership'.b)
-
-        decoded = Eth::Abi.decode(['(bytes32,bytes32[])'], result[2])[0]
-
-        expect(decoded[0].unpack1('H*')).to eq('1' * 64)
-        expect(decoded[1][0].unpack1('H*')).to eq('2' * 64)
       end
     end
 

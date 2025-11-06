@@ -207,7 +207,8 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
             {"trait_type" => "Color", "value" => "Blue"},
             {"trait_type" => "Rarity", "value" => "1"},
             {"trait_type" => "Power", "value" => "100"}
-          ]
+          ],
+          "merkle_proof" => []
         }
       }
 
@@ -236,7 +237,8 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
             {"trait_type" => "Color", "value" => "Red"},
             {"trait_type" => "Rarity", "value" => "5"},
             {"trait_type" => "Power", "value" => "500"}
-          ]
+          ],
+          "merkle_proof" => []
         }
       }
 
@@ -248,7 +250,7 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
 
       item2_results = import_l1_block([item2_spec], esip_overrides: { esip6_is_enabled: true })
       item2_id = item2_results[:ethscription_ids].first
-      batch_results = item2_results  # Use the second item's results for validation
+      expect(item2_id).to be_present, "Item 2 should be created"
 
       # Validate first item addition
       expect(item1_results[:ethscription_ids]).not_to be_empty, "Should create first item ethscription"
@@ -259,7 +261,6 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
       item1_events = ProtocolEventReader.parse_receipt_events(item1_results[:l2_receipts].first)
 
       item1_added_event = item1_events.find { |e| e[:event] == 'ItemsAdded' }
-      
       expect(item1_added_event).not_to be_nil, "Should emit ItemsAdded event for item 1"
       expect(item1_added_event[:count]).to eq(1), "Should add 1 item"
 

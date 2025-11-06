@@ -28,8 +28,8 @@ class Erc721EthscriptionsCollectionParser
     # New combined create op name used by the contract; keep legacy alias below
     'create_collection_and_add_self' => {
       keys: %w[metadata item],
-      # ((CollectionParams),(ItemData)) with ethscription_id in ItemData
-      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,bytes32,string,string,(string,string)[],bytes32[]))',
+      # ((CollectionParams),(ItemData)) - ItemData without ethscription_id (item refers to itself)
+      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'metadata' => :collection_metadata,
         'item' => :single_item
@@ -38,7 +38,7 @@ class Erc721EthscriptionsCollectionParser
     # Legacy alias retained for backwards compatibility
     'create_and_add_self' => {
       keys: %w[metadata item],
-      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,bytes32,string,string,(string,string)[],bytes32[]))',
+      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'metadata' => :collection_metadata,
         'item' => :single_item
@@ -47,19 +47,10 @@ class Erc721EthscriptionsCollectionParser
     # New single-item add op; keep legacy batch below for compatibility
     'add_self_to_collection' => {
       keys: %w[collection_id item],
-      abi_type: '(bytes32,(uint256,string,bytes32,string,string,(string,string)[],bytes32[]))',
+      abi_type: '(bytes32,(uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'collection_id' => :bytes32,
         'item' => :single_item
-      }
-    },
-    'add_items_batch' => {
-      keys: %w[collection_id items],
-      # Includes ethscription_id in each item
-      abi_type: '(bytes32,(uint256,string,bytes32,string,string,(string,string)[],bytes32[])[])',
-      validators: {
-        'collection_id' => :bytes32,
-        'items' => :items_array
       }
     },
     'remove_items' => {
@@ -103,37 +94,29 @@ class Erc721EthscriptionsCollectionParser
       validators: {
         'collection_id' => :bytes32
       }
-    },
-    'sync_ownership' => {
-      keys: %w[collection_id ethscription_ids],
-      abi_type: '(bytes32,bytes32[])',
-      validators: {
-        'collection_id' => :bytes32,
-        'ethscription_ids' => :bytes32_array
-      }
     }
   }.freeze
 
-  # Item keys for validation (includes ethscription_id; item must refer to itself)
-  ITEM_KEYS_MIN = %w[item_index name ethscription_id background_color description attributes].freeze
-  ITEM_KEYS_WITH_PROOF = %w[item_index name ethscription_id background_color description attributes merkle_proof].freeze
+  # Item keys for validation (ethscription_id removed - item refers to itself)
+  # merkle_proof is always required (can be empty array)
+  ITEM_KEYS = %w[item_index name background_color description attributes merkle_proof].freeze
 
   # Attribute keys for NFT metadata
   ATTRIBUTE_KEYS = %w[trait_type value].freeze
 
   class ValidationError < StandardError; end
 
-  DEFAULT_ITEMS_PATH = ENV['COLLECTIONS_ITEMS_PATH'] || 'items_by_ethscription.json'
-  DEFAULT_COLLECTIONS_PATH = ENV['COLLECTIONS_META_PATH'] || 'collections_by_name.json'
+  DEFAULT_ITEMS_PATH = ENV['COLLECTIONS_ITEMS_PATH'] || Rails.root.join('items_by_ethscription.json')
+  DEFAULT_COLLECTIONS_PATH = ENV['COLLECTIONS_META_PATH'] || Rails.root.join('collections_by_name.json')
 
-  def self.extract(content_uri, ethscription_id: nil, import_fallback: false, items_path: DEFAULT_ITEMS_PATH, collections_path: DEFAULT_COLLECTIONS_PATH, cutoff_number: nil)
-    new.extract(content_uri, ethscription_id: ethscription_id, import_fallback: import_fallback, items_path: items_path, collections_path: collections_path, cutoff_number: cutoff_number)
+  def self.extract(content_uri, ethscription_id: nil)
+    new.extract(content_uri, ethscription_id: ethscription_id)
   end
 
-  def extract(content_uri, ethscription_id: nil, import_fallback: false, items_path: DEFAULT_ITEMS_PATH, collections_path: DEFAULT_COLLECTIONS_PATH, cutoff_number: nil)
-    # Import-aware path takes precedence if enabled and id is provided
-    if import_fallback && ethscription_id
-      if (encoded = build_import_encoded_params(ethscription_id.to_s.downcase, items_path: items_path, collections_path: collections_path, cutoff_number: cutoff_number))
+  def extract(content_uri, ethscription_id: nil)
+    # Import-aware path takes precedence if id is provided
+    if ethscription_id
+      if (encoded = build_import_encoded_params(ethscription_id.to_hex))
         return encoded
       end
     end
@@ -169,7 +152,7 @@ class Erc721EthscriptionsCollectionParser
 
       # Remove protocol fields for encoding
       encoding_data = data.reject { |k, _| k == 'p' || k == 'op' }
-
+      
       # Validate field types and encode
       encoded_data = encode_operation(operation, encoding_data, schema)
 
@@ -181,31 +164,28 @@ class Erc721EthscriptionsCollectionParser
     end
   end
 
-  private
-
   # -------------------- Import fallback --------------------
 
   # Returns [protocol, operation, encoded_data] or nil
-  def build_import_encoded_params(id, items_path:, collections_path:, cutoff_number: nil)
-    load_import_data(items_path: items_path, collections_path: collections_path)
+  def build_import_encoded_params(id)
+    data = self.class.load_import_data(
+      items_path: DEFAULT_ITEMS_PATH,
+      collections_path: DEFAULT_COLLECTIONS_PATH
+    )
 
-    item = @__items_by_id[id]
+    item = data[:items_by_id][id]
     return nil unless item
-
-    if cutoff_number && safe_uint(item['ethscription_number']) > cutoff_number
-      return nil
-    end
 
     coll_name = item['collection_name']
     return nil unless coll_name
 
-    leader_id = @__leader_by_collection[coll_name]
+    leader_id = data[:leader_by_collection][coll_name]
     return nil unless leader_id
 
-    item_index = @__zero_index_by_id[id] || 0
+    item_index = data[:zero_index_by_id][id] || 0
 
     if id == leader_id
-      metadata = @__collections_by_name[coll_name]
+      metadata = data[:collections_by_name][coll_name]
       return nil unless metadata
       operation = 'create_collection_and_add_self'
       schema = OPERATION_SCHEMAS[operation]
@@ -227,50 +207,53 @@ class Erc721EthscriptionsCollectionParser
     end
   end
 
-  def load_import_data(items_path:, collections_path:)
-    # Memoize parsed JSON and derived leader/index maps
-    if @__loaded_items_path == items_path && @__loaded_collections_path == collections_path && @__items_by_id
-      return
-    end
+  class << self
+    include Memery
 
-    items = JSON.parse(File.read(items_path))
-    collections = JSON.parse(File.read(collections_path))
+    def load_import_data(items_path:, collections_path:)
+      items = JSON.parse(File.read(items_path))
+      collections = JSON.parse(File.read(collections_path))
 
-    @__items_by_id = {}
-    items.each { |k, v| @__items_by_id[k.to_s.downcase] = v }
-    @__collections_by_name = collections
+      items_by_id = {}
+      items.each { |k, v| items_by_id[k.to_s.downcase] = v }
 
-    # Group items by collection and derive leader (min ethscription_number)
-    groups = Hash.new { |h, k| h[k] = [] }
-    @__items_by_id.each do |iid, it|
-      cname = it['collection_name']
-      next unless cname.is_a?(String) && !cname.empty?
-      num = safe_uint(it['ethscription_number'])
-      groups[cname] << [iid, num]
-    end
-
-    @__leader_by_collection = {}
-    groups.each do |cname, pairs|
-      next if pairs.empty?
-      @__leader_by_collection[cname] = pairs.min_by { |_id, num| num }[0]
-    end
-
-    # Normalize item indices to zero-based
-    @__zero_index_by_id = {}
-    groups.each do |_cname, pairs|
-      explicit = pairs.map { |(iid, _)| [iid, @__items_by_id[iid]['index']] }
-      explicit_indices = explicit.filter_map { |_iid, idx| idx if idx.is_a?(Integer) }
-      if explicit_indices.size == pairs.size
-        min_idx = explicit_indices.min
-        offset = (min_idx == 0) ? 0 : 1
-        explicit.each { |iid, idx| @__zero_index_by_id[iid] = [idx - offset, 0].max }
-      else
-        pairs.sort_by { |_iid, num| num }.each_with_index { |(iid, _), i| @__zero_index_by_id[iid] = i }
+      # Group items by collection and derive leader (min ethscription_number)
+      groups = Hash.new { |h, k| h[k] = [] }
+      items_by_id.each do |iid, it|
+        cname = it['collection_name']
+        next unless cname.is_a?(String) && !cname.empty?
+        num = it['ethscription_number'].to_i
+        groups[cname] << [iid, num]
       end
-    end
 
-    @__loaded_items_path = items_path
-    @__loaded_collections_path = collections_path
+      leader_by_collection = {}
+      groups.each do |cname, pairs|
+        next if pairs.empty?
+        leader_by_collection[cname] = pairs.min_by { |_id, num| num }[0]
+      end
+
+      # Normalize item indices to zero-based
+      zero_index_by_id = {}
+      groups.each do |_cname, pairs|
+        explicit = pairs.map { |(iid, _)| [iid, items_by_id[iid]['index']] }
+        explicit_indices = explicit.filter_map { |_iid, idx| idx if idx.is_a?(Integer) }
+        if explicit_indices.size == pairs.size
+          min_idx = explicit_indices.min
+          offset = (min_idx == 0) ? 0 : 1
+          explicit.each { |iid, idx| zero_index_by_id[iid] = [idx - offset, 0].max }
+        else
+          pairs.sort_by { |_iid, num| num }.each_with_index { |(iid, _), i| zero_index_by_id[iid] = i }
+        end
+      end
+
+      {
+        items_by_id: items_by_id,
+        collections_by_name: collections,
+        leader_by_collection: leader_by_collection,
+        zero_index_by_id: zero_index_by_id
+      }
+    end
+    memoize :load_import_data
   end
 
   # Build ordered JSON objects to match strict parser expectations
@@ -308,10 +291,10 @@ class Erc721EthscriptionsCollectionParser
     OrderedHash[
       'item_index', safe_uint_string(item_index),
       'name', safe_string(item['name']),
-      'ethscription_id', to_bytes32_hex(item_id),
       'background_color', safe_string(item['background_color']),
       'description', safe_string(item['description']),
-      'attributes', attrs
+      'attributes', attrs,
+      'merkle_proof', []
     ]
   end
 
@@ -370,8 +353,6 @@ class Erc721EthscriptionsCollectionParser
       build_create_collection_values(validated_data)
     when 'create_collection_and_add_self', 'create_and_add_self'
       build_create_and_add_self_values(validated_data)
-    when 'add_items_batch'
-      build_add_items_batch_values(validated_data)
     when 'add_self_to_collection'
       build_add_self_to_collection_values(validated_data)
     when 'remove_items'
@@ -382,14 +363,38 @@ class Erc721EthscriptionsCollectionParser
       build_edit_collection_item_values(validated_data)
     when 'lock_collection'
       build_lock_collection_values(validated_data)
-    when 'sync_ownership'
-      build_sync_ownership_values(validated_data)
     else
       raise ValidationError, "Unknown operation: #{operation}"
     end
 
     # Use ABI type from schema for encoding
-    Eth::Abi.encode([schema[:abi_type]], [values])
+    begin
+      Eth::Abi.encode([schema[:abi_type]], [values])
+    rescue Encoding::CompatibilityError => e
+      Rails.logger.error "=== Collection ABI Encoding Error ==="
+      Rails.logger.error "Error: #{e.message}"
+      Rails.logger.error "operation: #{operation}"
+      Rails.logger.error "schema abi_type: #{schema[:abi_type]}"
+      Rails.logger.error "values inspection:"
+      log_encoding_details(values)
+      raise
+    end
+  end
+  
+  def log_encoding_details(obj, indent = 0)
+    prefix = "  " * indent
+    case obj
+    when Array
+      Rails.logger.error "#{prefix}Array[#{obj.size}]:"
+      obj.each_with_index do |item, idx|
+        Rails.logger.error "#{prefix}  [#{idx}]:"
+        log_encoding_details(item, indent + 2)
+      end
+    when String
+      Rails.logger.error "#{prefix}String: #{obj.inspect[0..100]}, encoding: #{obj.encoding.name}, bytesize: #{obj.bytesize}"
+    else
+      Rails.logger.error "#{prefix}#{obj.class}: #{obj.inspect[0..100]}"
+    end
   end
 
   def validate_fields(data, validators)
@@ -415,7 +420,7 @@ class Erc721EthscriptionsCollectionParser
     unless value.is_a?(String)
       raise ValidationError, "Field #{field_name} must be a string, got #{value.class.name}"
     end
-    value
+    value.b
   end
 
   def validate_uint256(value, field_name)
@@ -499,31 +504,21 @@ class Erc721EthscriptionsCollectionParser
       raise ValidationError, "Item must be an object"
     end
 
-    # Check exact key order; allow optional merkle_proof
-    has_proof =
-      if item.keys == ITEM_KEYS_WITH_PROOF
-        true
-      elsif item.keys == ITEM_KEYS_MIN
-        false
-      else
-        expected = "[#{ITEM_KEYS_MIN.join(', ')}] or [#{ITEM_KEYS_WITH_PROOF.join(', ')}]"
-        raise ValidationError, "Invalid item keys or order. Expected: #{expected}, got: [#{item.keys.join(', ')}]"
-      end
+    # Check exact key order - merkle_proof is always required
+    unless item.keys == ITEM_KEYS
+      expected = "[#{ITEM_KEYS.join(', ')}]"
+      raise ValidationError, "Invalid item keys or order. Expected: #{expected}, got: [#{item.keys.join(', ')}]"
+    end
 
     # Validate each field - return in internal format for encoding
-    result = {
+    {
       itemIndex: validate_uint256(item['item_index'], 'item_index'),
       name: validate_string(item['name'], 'name'),
-      ethscriptionId: validate_bytes32(item['ethscription_id'], 'ethscription_id'),
       backgroundColor: validate_string(item['background_color'], 'background_color'),
       description: validate_string(item['description'], 'description'),
-      attributes: validate_attributes_array(item['attributes'], 'attributes')
+      attributes: validate_attributes_array(item['attributes'], 'attributes'),
+      merkleProof: validate_bytes32_array(item['merkle_proof'], 'merkle_proof')
     }
-
-    # Optional merkle proof; always include as bytes32[] (empty when omitted)
-    result[:merkleProof] = has_proof ? validate_bytes32_array(item['merkle_proof'], 'merkle_proof') : []
-
-    result
   end
 
   def validate_attributes_array(value, field_name)
@@ -595,7 +590,6 @@ class Erc721EthscriptionsCollectionParser
     item_tuple = [
       item[:itemIndex],
       item[:name],
-      item[:ethscriptionId],
       item[:backgroundColor],
       item[:description],
       item[:attributes],
@@ -610,7 +604,6 @@ class Erc721EthscriptionsCollectionParser
     item_tuple = [
       item[:itemIndex],
       item[:name],
-      item[:ethscriptionId],
       item[:backgroundColor],
       item[:description],
       item[:attributes],
@@ -625,7 +618,6 @@ class Erc721EthscriptionsCollectionParser
       [
         item[:itemIndex],
         item[:name],
-        item[:ethscriptionId],
         item[:backgroundColor],
         item[:description],
         item[:attributes],
@@ -671,9 +663,5 @@ class Erc721EthscriptionsCollectionParser
   def build_lock_collection_values(data)
     # Single bytes32, not a tuple - but we need to return just the value
     data['collection_id']
-  end
-
-  def build_sync_ownership_values(data)
-    [data['collection_id'], data['ethscription_ids']]
   end
 end

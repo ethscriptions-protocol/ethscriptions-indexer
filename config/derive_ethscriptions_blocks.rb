@@ -176,7 +176,7 @@ module Clockwork
           # Don't sleep here - the loop's sleep at line 192 will handle it
         rescue => e
           Rails.logger.error "Import error: #{e.class} - #{e.message}"
-          Rails.logger.error e.backtrace.first(20).join("\n")
+          Rails.logger.error e.backtrace.join("\n")
 
           puts "[#{Time.now}] ❌ Error: #{e.message}"
 

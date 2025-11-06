@@ -180,8 +180,12 @@ class EthscriptionTransaction < T::Struct
     esip6 = DataUri.esip6?(content_uri) || false
 
     # Extract protocol params - returns [protocol, operation, encoded_data]
-    protocol, operation, encoded_data = ProtocolExtractor.for_calldata(content_uri)
-
+    # Pass the ethscription_id context so parsers can inject it when needed
+    protocol, operation, encoded_data = ProtocolExtractor.for_calldata(
+      content_uri,
+      ethscription_id: eth_transaction.transaction_hash
+    )
+    
     # Hash the content for protocol uniqueness
     content_uri_hash_hex = Digest::SHA256.hexdigest(content_uri)
     content_uri_hash = [content_uri_hash_hex].pack('H*')
@@ -208,10 +212,22 @@ class EthscriptionTransaction < T::Struct
       protocol_params                          # ProtocolParams tuple
     ]
 
-    encoded = Eth::Abi.encode(
-      ['(bytes32,bytes32,address,bytes,string,bool,(string,string,bytes))'],
-      [params]
-    )
+    begin
+      encoded = Eth::Abi.encode(
+        ['(bytes32,bytes32,address,bytes,string,bool,(string,string,bytes))'],
+        [params]
+      )
+    rescue Encoding::CompatibilityError => e
+      Rails.logger.error "=== ABI Encoding Error (build_create_calldata) ==="
+      Rails.logger.error "Error: #{e.message}"
+      Rails.logger.error "content_uri: #{content_uri[0..100]}"
+      Rails.logger.error "protocol: #{protocol.inspect[0..100]}, encoding: #{protocol.encoding.name}"
+      Rails.logger.error "operation: #{operation.inspect[0..100]}, encoding: #{operation.encoding.name}"
+      Rails.logger.error "encoded_data: #{encoded_data.inspect[0..100]}, encoding: #{encoded_data.encoding.name}, bytesize: #{encoded_data.bytesize}"
+      Rails.logger.error "mimetype: #{mimetype.inspect}, encoding: #{mimetype.encoding.name}"
+      Rails.logger.error "raw_content encoding: #{raw_content.encoding.name}, bytesize: #{raw_content.bytesize}"
+      raise
+    end
 
     # Ensure binary encoding
     (function_sig + encoded).b

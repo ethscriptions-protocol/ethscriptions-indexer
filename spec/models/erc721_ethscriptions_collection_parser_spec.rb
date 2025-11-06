@@ -3,6 +3,7 @@ require 'rails_helper'
 RSpec.describe Erc721EthscriptionsCollectionParser do
   describe '#extract' do
     let(:default_params) { [''.b, ''.b, ''.b] }
+    let(:zero_merkle_root) { '0x' + '0' * 64 }
 
     describe 'validation rules' do
       # @generic-compatible
@@ -57,12 +58,12 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       # @generic-compatible
       it 'validates uint256 format - no leading zeros' do
         # Valid
-      valid_json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"1000","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":""}'
+      valid_json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"1000","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
         result = described_class.extract(valid_json)
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
 
         # Invalid - leading zero
-        invalid_json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"01000","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":""}'
+      invalid_json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"01000","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
         result = described_class.extract(invalid_json)
         expect(result).to eq(default_params)
       end
@@ -93,7 +94,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
     describe 'create_collection operation' do
       let(:valid_create_json) do
-        'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"My Collection","symbol":"MYC","max_supply":"10000","description":"A test collection","logo_image_uri":"esc://logo","banner_image_uri":"esc://banner","background_color":"#FF5733","website_link":"https://example.com","twitter_link":"https://twitter.com/test","discord_link":"https://discord.gg/test"}'
+        %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"My Collection","symbol":"MYC","max_supply":"10000","description":"A test collection","logo_image_uri":"esc://logo","banner_image_uri":"esc://banner","background_color":"#FF5733","website_link":"https://example.com","twitter_link":"https://twitter.com/test","discord_link":"https://discord.gg/test","merkle_root":"#{zero_merkle_root}"})
       end
 
       it 'encodes create_collection correctly' do
@@ -118,17 +119,18 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         expect(decoded[7]).to eq("https://example.com")
         expect(decoded[8]).to eq("https://twitter.com/test")
         expect(decoded[9]).to eq("https://discord.gg/test")
+        expect(decoded[10]).to eq([zero_merkle_root[2..]].pack('H*'))
       end
 
       it 'handles empty optional fields' do
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"100","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":""}'
+        json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"100","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
         result = described_class.extract(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('create_collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(string,string,uint256,string,string,string,string,string,string,string)'],
+          ['(string,string,uint256,string,string,string,string,string,string,string,bytes32)'],
           result[2]
         )[0]
 
@@ -136,13 +138,14 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         expect(decoded[1]).to eq("TST")
         expect(decoded[2]).to eq(100)
         expect(decoded[3]).to eq("")
+        expect(decoded[10]).to eq([zero_merkle_root[2..]].pack('H*'))
       end
 
       it 'rejects uint256 values that exceed maximum' do
         # Value that exceeds uint256 max
         too_large = (2**256).to_s  # One more than max
 
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"' + too_large + '","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":""}'
+        json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"#{too_large}","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
         result = described_class.extract(json)
 
         # Should return default params due to validation failure
@@ -153,7 +156,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         # Maximum valid uint256
         max_uint256 = (2**256 - 1).to_s
 
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"' + max_uint256 + '","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":""}'
+        json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"#{max_uint256}","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
         result = described_class.extract(json)
 
         # Should succeed with max value
@@ -161,11 +164,12 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         expect(result[1]).to eq('create_collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(string,string,uint256,string,string,string,string,string,string,string)'],
+          ['(string,string,uint256,string,string,string,string,string,string,string,bytes32)'],
           result[2]
         )[0]
 
         expect(decoded[2]).to eq(2**256 - 1)
+        expect(decoded[10]).to eq([zero_merkle_root[2..]].pack('H*'))
       end
     end
 
@@ -205,7 +209,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       end
 
       it 'handles empty attributes array' do
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[],"merkle_proof":[]}}'
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[], "merkle_proof":[]}}'
         result = described_class.extract(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
@@ -239,7 +243,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
     describe 'edit_collection operation' do
       it 'encodes edit_collection correctly' do
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"edit_collection","collection_id":"0x' + '1' * 64 + '","description":"Updated","logo_image_uri":"new_logo","banner_image_uri":"","background_color":"#00FF00","website_link":"https://new.com","twitter_link":"","discord_link":""}'
+        json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"edit_collection","collection_id":"0x#{"1" * 64}","description":"Updated","logo_image_uri":"new_logo","banner_image_uri":"","background_color":"#00FF00","website_link":"https://new.com","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
         result = described_class.extract(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
@@ -256,6 +260,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         expect(decoded[3]).to eq("")
         expect(decoded[4]).to eq("#00FF00")
         expect(decoded[5]).to eq("https://new.com")
+        expect(decoded[8]).to eq([zero_merkle_root[2..]].pack('H*'))
       end
     end
 
@@ -300,9 +305,9 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       it 'preserves all data through encode/decode cycle' do
         test_cases = [
           {
-            json: 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"100","description":"Desc","logo_image_uri":"logo","banner_image_uri":"banner","background_color":"#FFF","website_link":"http://test","twitter_link":"@test","discord_link":"discord"}',
-            abi_type: '(string,string,uint256,string,string,string,string,string,string,string)',
-            expected: ["Test", "TST", 100, "Desc", "logo", "banner", "#FFF", "http://test", "@test", "discord"]
+            json: %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"100","description":"Desc","logo_image_uri":"logo","banner_image_uri":"banner","background_color":"#FFF","website_link":"http://test","twitter_link":"@test","discord_link":"discord","merkle_root":"#{zero_merkle_root}"}),
+            abi_type: '(string,string,uint256,string,string,string,string,string,string,string,bytes32)',
+            expected: ["Test", "TST", 100, "Desc", "logo", "banner", "#FFF", "http://test", "@test", "discord", [zero_merkle_root[2..]].pack('H*')]
           },
           {
             json: 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"0x' + 'a' * 64 + '"}',
@@ -346,12 +351,12 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
       it 'rejects null values in string fields (no silent coercion)' do
         # Test null in create_collection string fields
-        json_with_null = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":null,"symbol":"TEST","max_supply":"100","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":""}'
+        json_with_null = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":null,"symbol":"TEST","max_supply":"100","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
         result = described_class.extract(json_with_null)
         expect(result).to eq(default_params)
 
         # Test null in description field
-        json_with_null_desc = 'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"100","description":null,"logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":""}'
+        json_with_null_desc = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"100","description":null,"logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
         result = described_class.extract(json_with_null_desc)
         expect(result).to eq(default_params)
 

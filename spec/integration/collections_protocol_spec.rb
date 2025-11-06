@@ -9,6 +9,7 @@ RSpec.describe "Collections Protocol", type: :integration do
   # Ethscriptions are created by sending to any address with data in the input
   # The protocol handler is called automatically by the Ethscriptions contract
   let(:dummy_recipient) { valid_address("recipient") }
+  let(:zero_merkle_root) { '0x' + '0' * 64 }
 
   describe "Collection Creation" do
     it "creates a collection with metadata fields" do
@@ -19,7 +20,8 @@ RSpec.describe "Collections Protocol", type: :integration do
         "symbol" => "TEST",
         "description" => "Test collection",
         "max_supply" => "10000",
-        "logo_image_uri" => "https://example.com/logo.png"
+        "logo_image_uri" => "https://example.com/logo.png",
+        "merkle_root" => zero_merkle_root
       }
 
       expect_ethscription_success(
@@ -33,10 +35,17 @@ RSpec.describe "Collections Protocol", type: :integration do
         ethscription_id = results[:ethscription_ids].first
         stored = get_ethscription_content(ethscription_id)
 
-        # Verify the content includes our data
-        expect(stored[:content]).to include('"p":"erc-721-ethscriptions-collection"')
-        expect(stored[:content]).to include('"op":"create_collection"')
-        expect(stored[:content]).to include('"name":"Test NFTs"')
+        content_str = stored[:content]
+        json_payload = content_str.start_with?('data:,') ? content_str.sub(/\Adata:,/, '') : content_str
+        parsed = begin
+          JSON.parse(json_payload)
+        rescue JSON::ParserError
+          raise RSpec::Expectations::ExpectationNotMetError, "Stored content not valid JSON: #{json_payload.inspect}"
+        end
+
+        expect(parsed['p']).to eq('erc-721-ethscriptions-collection')
+        expect(parsed['op']).to eq('create_collection')
+        expect(parsed['name']).to eq('Test NFTs')
 
         # TODO: Once contract is deployed, verify collection was created in contract storage
       end
@@ -48,7 +57,8 @@ RSpec.describe "Collections Protocol", type: :integration do
         "op" => "create_collection",
         "name" => "Minimal Collection",
         "symbol" => "MIN",
-        "max_supply" => "1000"
+        "max_supply" => "1000",
+        "merkle_root" => zero_merkle_root
       }
 
       expect_ethscription_success(
@@ -66,7 +76,8 @@ RSpec.describe "Collections Protocol", type: :integration do
         "op" => "create_collection",
         "name" => "Big Supply Collection",
         "symbol" => "BIG",
-        "max_supply" => "1000000000000000000" # Large number as string
+        "max_supply" => "1000000000000000000", # Large number as string
+        "merkle_root" => zero_merkle_root
       }
 
       expect_ethscription_success(
@@ -276,7 +287,7 @@ RSpec.describe "Collections Protocol", type: :integration do
           data_uri: "data:," + struct_data.to_json
         )
       ) do |results|
-        # The protocol extractor should preserve field order
+        # The protocol parser should preserve field order
         # TODO: Once contract is deployed, verify struct was decoded correctly
       end
     end
@@ -297,7 +308,8 @@ RSpec.describe "Collections Protocol", type: :integration do
         "background_color" => "",
         "website_link" => "",
         "twitter_link" => "",
-        "discord_link" => ""
+        "discord_link" => "",
+        "merkle_root" => zero_merkle_root
       }
       
       expect_ethscription_success(
@@ -472,7 +484,7 @@ RSpec.describe "Collections Protocol", type: :integration do
 
   describe "Multi-line JSON Support" do
     it "accepts properly formatted multi-line JSON" do
-      # ProtocolExtractor now parses JSON instead of using regex
+      # ProtocolParser now parses JSON instead of using regex
       # so multi-line JSON should work
       multiline_json = {
         "p" => "erc-721-ethscriptions-collection",

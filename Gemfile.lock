@@ -16,7 +16,7 @@ GIT
 
 GIT
   remote: https://github.com/0xfacet/facet_rails_common.git
-  revision: 3d32c04defdd12c1f93b99d272338a4578895d1c
+  revision: e733e3877d835f68e8671d12d6ef9c0d24025af4
   branch: lenient_base64
   specs:
     facet_rails_common (0.1.0)
@@ -103,9 +103,9 @@ GEM
     airbrake-ruby (6.2.2)
       rbtree3 (~> 0.6)
     awesome_print (1.9.2)
-    base64 (0.2.0)
-    benchmark (0.4.1)
-    bigdecimal (3.2.3)
+    base64 (0.3.0)
+    benchmark (0.5.0)
+    bigdecimal (3.3.1)
     bls12-381 (0.3.0)
       h2c (~> 0.2.0)
     bootsnap (1.17.0)
@@ -117,7 +117,7 @@ GEM
       tzinfo
     coderay (1.1.3)
     concurrent-ruby (1.3.5)
-    connection_pool (2.4.1)
+    connection_pool (2.5.4)
     crass (1.0.6)
     csv (3.3.5)
     date (3.4.1)
@@ -129,8 +129,7 @@ GEM
     dotenv-rails (2.8.1)
       dotenv (= 2.8.1)
       railties (>= 3.2)
-    drb (2.2.0)
-      ruby2_keywords
+    drb (2.2.3)
     ecdsa (1.2.0)
     erubi (1.12.0)
     et-orbi (1.3.0)
@@ -156,7 +155,7 @@ GEM
       multi_xml (>= 0.5.2)
     httpx (1.6.2)
       http-2 (>= 1.0.0)
-    i18n (1.14.1)
+    i18n (1.14.7)
       concurrent-ruby (~> 1.0)
     io-console (0.7.1)
     irb (1.15.2)
@@ -183,7 +182,7 @@ GEM
     method_source (1.0.0)
     mini_mime (1.1.5)
     mini_portile2 (2.8.9)
-    minitest (5.20.0)
+    minitest (5.26.0)
     msgpack (1.7.2)
     multi_xml (0.7.2)
       bigdecimal (~> 3.1)
@@ -298,7 +297,6 @@ GEM
       json-schema (>= 2.2, < 6.0)
       railties (>= 5.2, < 8.1)
       rspec-core (>= 2.14)
-    ruby2_keywords (0.0.5)
     rubyzip (2.4.1)
     scrypt (3.1.0)
       ffi-compiler (>= 1.0, < 2.0)
@@ -343,10 +341,10 @@ GEM
       thor (>= 1.2.0)
       yard-sorbet
     thor (1.4.0)
-    timeout (0.4.1)
+    timeout (0.4.4)
     tzinfo (2.0.6)
       concurrent-ruby (~> 1.0)
-    uri (1.0.3)
+    uri (1.1.1)
     useragent (0.16.11)
     webrick (1.8.1)
     websocket-driver (0.8.0)

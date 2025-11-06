@@ -181,7 +181,7 @@ class EthscriptionTransaction < T::Struct
 
     # Extract protocol params - returns [protocol, operation, encoded_data]
     # Pass the ethscription_id context so parsers can inject it when needed
-    protocol, operation, encoded_data = ProtocolExtractor.for_calldata(
+    protocol, operation, encoded_data = ProtocolParser.for_calldata(
       content_uri,
       ethscription_id: eth_transaction.transaction_hash
     )

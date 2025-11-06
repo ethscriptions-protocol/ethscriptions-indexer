@@ -1,36 +1,21 @@
-# Unified protocol extractor that delegates to appropriate extractors
-class ProtocolExtractor
+# Unified protocol parser that delegates to specific protocol parsers
+class ProtocolParser
   # Default return values to check if extraction succeeded
   TOKEN_DEFAULT_PARAMS = Erc20FixedDenominationParser::DEFAULT_PARAMS
   COLLECTIONS_DEFAULT_PARAMS = Erc721EthscriptionsCollectionParser::DEFAULT_PARAMS
-  GENERIC_DEFAULT_PARAMS = GenericProtocolExtractor::DEFAULT_PARAMS
 
   def self.extract(content_uri, ethscription_id: nil)
-    # begin
-    #   payload = DataUri.new(content_uri).decoded_data
-    # rescue StandardError
-    #   return nil
-    # end
-    # return nil unless payload.start_with?('{')
-
-    # Try extractors in order of strictness
+    # Try parsers in order of specificity
     # 1. Token protocol (most strict - exact character position matters)
     # 2. Collections protocol (strict - exact key order required)
-    # 3. Generic protocol (flexible - for all other protocols) - gated by ENABLE_GENERIC_PROTOCOLS
 
-    # Try token extractor first (most strict)
-    result = try_token_extractor(content_uri)
+    # Try token parser first (most strict)
+    result = try_token_parser(content_uri)
     return result if result
 
-    # Try collections extractor next (if enabled)
-    result = try_collections_extractor(content_uri, ethscription_id: ethscription_id)
+    # Try collections parser next (if enabled)
+    result = try_collections_parser(content_uri, ethscription_id: ethscription_id)
     return result if result
-
-    # Try generic extractor last (if enabled)
-    if ENV['ENABLE_GENERIC_PROTOCOLS'] == 'true'
-      result = try_generic_extractor(content_uri)
-      return result if result
-    end
 
     # No protocol could be extracted
     nil
@@ -38,7 +23,7 @@ class ProtocolExtractor
 
   private
 
-  def self.try_token_extractor(content_uri)
+  def self.try_token_parser(content_uri)
     # Erc20FixedDenominationParser uses strict regex and returns DEFAULT_PARAMS if no match
     # This enforces non-ESIP6 and exact JSON formatting implicitly.
     params = Erc20FixedDenominationParser.extract(content_uri)
@@ -57,7 +42,7 @@ class ProtocolExtractor
     end
   end
 
-  def self.try_collections_extractor(content_uri, ethscription_id: nil)
+  def self.try_collections_parser(content_uri, ethscription_id: nil)
     # Erc721EthscriptionsCollectionParser returns [''.b, ''.b, ''.b] if no match
     protocol, operation, encoded_data = Erc721EthscriptionsCollectionParser.extract(
       content_uri,
@@ -71,24 +56,6 @@ class ProtocolExtractor
         protocol: protocol,
         operation: operation,
         params: nil, # Collections doesn't return decoded params
-        encoded_params: encoded_data
-      }
-    else
-      nil
-    end
-  end
-
-  def self.try_generic_extractor(content_uri)
-    # GenericProtocolExtractor returns [''.b, ''.b, ''.b] if no match
-    protocol, operation, encoded_data = GenericProtocolExtractor.extract(content_uri)
-
-    # Check if extraction succeeded
-    if protocol != ''.b && operation != ''.b
-      {
-        type: :generic,
-        protocol: protocol,
-        operation: operation,
-        params: nil, # Generic doesn't return decoded params
         encoded_params: encoded_data
       }
     else
@@ -143,8 +110,8 @@ class ProtocolExtractor
       # Collections protocol - already has encoded data
       [result[:protocol], result[:operation], result[:encoded_params]]
     else
-      # Generic protocol - already has encoded data
-      [result[:protocol], result[:operation], result[:encoded_params]]
+      # Unknown parser type - return empty protocol params
+      [''.b, ''.b, ''.b]
     end
   end
 

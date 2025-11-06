@@ -209,7 +209,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       end
 
       it 'handles empty attributes array' do
-        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[], "merkle_proof":[]}}'
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[],"merkle_proof":[]}}'
         result = described_class.extract(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)

@@ -17,8 +17,6 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
     Ethscriptions public constant ethscriptions = Ethscriptions(Predeploys.ETHSCRIPTIONS);
 
     string public constant PROTOCOL_NAME = "word-domains";
-    uint8 public constant MIN_LENGTH = 1;
-    uint8 public constant MAX_LENGTH = 31;
 
     struct DomainRecord {
         bytes32 packedName;

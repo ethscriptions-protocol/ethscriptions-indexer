@@ -120,10 +120,10 @@ class StorageReader
       raise StandardError, "RPC call failed for ethscription #{tx_hash}" if result.nil?
 
       # Decode the single Ethscription struct with all fields including content
-      # New struct order: ethscriptionId, ethscriptionNumber, contentUriHash, contentSha, mimetype, content,
-      #                   currentOwner, creator, initialOwner, previousOwner, l1BlockHash,
-      #                   l1BlockNumber, l2BlockNumber, createdAt, esip6
-      types = ['(bytes32,uint256,bytes32,bytes32,string,bytes,address,address,address,address,bytes32,uint256,uint256,uint256,bool)']
+      # Struct order: ethscriptionId, ethscriptionNumber, contentUriSha, contentHash, mimetype, content,
+      #               currentOwner, creator, initialOwner, previousOwner, l1BlockHash,
+      #               l1BlockNumber, l2BlockNumber, createdAt, esip6, protocolName, operation
+      types = ['(bytes32,uint256,bytes32,bytes32,string,bytes,address,address,address,address,bytes32,uint256,uint256,uint256,bool,string,string)']
       decoded = Eth::Abi.decode(types, result)
 
       # The struct is returned as an array
@@ -135,8 +135,8 @@ class StorageReader
         ethscription_number: ethscription_data[1],
 
         # Content fields
-        content_uri_hash: '0x' + ethscription_data[2].unpack1('H*'),
-        content_sha: '0x' + ethscription_data[3].unpack1('H*'),
+        content_uri_sha: '0x' + ethscription_data[2].unpack1('H*'),
+        content_hash: '0x' + ethscription_data[3].unpack1('H*'),
         mimetype: ethscription_data[4],
         content: ethscription_data[5],  # content is now at index 5
 
@@ -153,7 +153,9 @@ class StorageReader
         created_at: ethscription_data[13],
 
         # Protocol
-        esip6: ethscription_data[14]
+        esip6: ethscription_data[14],
+        protocol_name: ethscription_data[15],
+        operation: ethscription_data[16]
       }
     rescue => e
       Rails.logger.error "Failed to get ethscription with content #{tx_hash}: #{e.message}"
@@ -180,10 +182,10 @@ class StorageReader
       raise StandardError, "RPC call failed for ethscription #{tx_hash}" if result.nil?
 
       # Decode the Ethscription struct without content
-      # Struct order: ethscriptionId, ethscriptionNumber, contentUriHash, contentSha, mimetype, content (empty),
+      # Struct order: ethscriptionId, ethscriptionNumber, contentUriSha, contentHash, mimetype, content (empty),
       #               currentOwner, creator, initialOwner, previousOwner, l1BlockHash,
-      #               l1BlockNumber, l2BlockNumber, createdAt, esip6
-      types = ['(bytes32,uint256,bytes32,bytes32,string,bytes,address,address,address,address,bytes32,uint256,uint256,uint256,bool)']
+      #               l1BlockNumber, l2BlockNumber, createdAt, esip6, protocolName, operation
+      types = ['(bytes32,uint256,bytes32,bytes32,string,bytes,address,address,address,address,bytes32,uint256,uint256,uint256,bool,string,string)']
       decoded = Eth::Abi.decode(types, result)
 
       # The struct is returned as an array
@@ -195,8 +197,8 @@ class StorageReader
         ethscription_number: ethscription_data[1],
 
         # Content fields (no actual content bytes)
-        content_uri_hash: '0x' + ethscription_data[2].unpack1('H*'),
-        content_sha: '0x' + ethscription_data[3].unpack1('H*'),
+        content_uri_sha: '0x' + ethscription_data[2].unpack1('H*'),
+        content_hash: '0x' + ethscription_data[3].unpack1('H*'),
         mimetype: ethscription_data[4],
         # Skip content at index 5 (it's empty for WithoutContent)
 
@@ -213,7 +215,9 @@ class StorageReader
         created_at: ethscription_data[13],
 
         # Protocol
-        esip6: ethscription_data[14]
+        esip6: ethscription_data[14],
+        protocol_name: ethscription_data[15],
+        operation: ethscription_data[16]
       }
     rescue EthRpcClient::ExecutionRevertedError => e
       # Contract reverted - ethscription doesn't exist

@@ -423,31 +423,31 @@ class BlockValidator
       end
     end
 
-    # Verify content_uri_hash - this is the hash of the original content URI
-    stored_uri_hash = stored[:content_uri_hash]&.downcase&.delete_prefix('0x')
+    # Verify content_uri_sha - this is the hash of the original content URI
+    stored_uri_hash = stored[:content_uri_sha]&.downcase&.delete_prefix('0x')
     if creation[:content_uri]
       # Hash the content_uri from the API to compare
       expected_uri_hash = Digest::SHA256.hexdigest(creation[:content_uri]).downcase
       if stored_uri_hash != expected_uri_hash
-        @errors << "Storage content_uri_hash mismatch for #{tx_hash}: stored=#{stored_uri_hash}, expected=#{expected_uri_hash}"
+        @errors << "Storage content_uri_sha mismatch for #{tx_hash}: stored=#{stored_uri_hash}, expected=#{expected_uri_hash}"
       end
     end
 
-    # Verify content_sha - always present in API, must match exactly (with instrumentation)
-    stored_sha = stored[:content_sha]&.downcase&.delete_prefix('0x')
-    expected_sha = creation[:content_sha].downcase.delete_prefix('0x')
-    content_sha_match = stored_sha == expected_sha
-    content_sha_check = record_comparison(
-      "storage_content_sha_check",
+    # Verify content_hash - always present in API, must match exactly (with instrumentation)
+    stored_sha = stored[:content_hash]&.downcase&.delete_prefix('0x')
+    expected_sha = creation[:content_hash].downcase.delete_prefix('0x')
+    content_hash_match = stored_sha == expected_sha
+    content_hash_check = record_comparison(
+      "storage_content_hash_check",
       tx_hash,
       expected_sha,
       stored_sha,
-      content_sha_match,
+      content_hash_match,
       { l1_block: l1_block_num }
     )
 
-    if !content_sha_match
-      @errors << "Storage content_sha mismatch for #{tx_hash}: stored=#{stored[:content_sha]}, expected=#{creation[:content_sha]}"
+    if !content_hash_match
+      @errors << "Storage content_hash mismatch for #{tx_hash}: stored=#{stored[:content_hash]}, expected=#{creation[:content_hash]}"
     end
 
     # Verify mimetype - normalize to binary for comparison (with instrumentation)

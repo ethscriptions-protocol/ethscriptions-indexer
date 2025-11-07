@@ -187,8 +187,8 @@ class EthscriptionTransaction < T::Struct
     )
     
     # Hash the content for protocol uniqueness
-    content_uri_hash_hex = Digest::SHA256.hexdigest(content_uri)
-    content_uri_hash = [content_uri_hash_hex].pack('H*')
+    content_uri_sha_hex = Digest::SHA256.hexdigest(content_uri)
+    content_uri_sha = [content_uri_sha_hex].pack('H*')
 
     # Convert hex strings to binary for ABI encoding
     tx_hash_bin = hex_to_bin(eth_transaction.transaction_hash)
@@ -204,7 +204,7 @@ class EthscriptionTransaction < T::Struct
     # Encode parameters
     params = [
       tx_hash_bin,                            # bytes32 ethscriptionId (L1 tx hash)
-      content_uri_hash,                        # bytes32 contentUriHash
+      content_uri_sha,                        # bytes32 contentUriHash
       owner_bin,                               # address
       raw_content,                             # bytes content
       mimetype.b,                              # string

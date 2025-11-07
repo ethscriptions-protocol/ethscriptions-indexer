@@ -6,6 +6,7 @@ import {L2GenesisConfig} from "./L2GenesisConfig.sol";
 import {Predeploys} from "../src/libraries/Predeploys.sol";
 import {Constants} from "../src/libraries/Constants.sol";
 import {Ethscriptions} from "../src/Ethscriptions.sol";
+import {MetaStoreLib} from "../src/libraries/MetaStoreLib.sol";
 import "forge-std/console.sol";
 
 /// @title GenesisEthscriptions
@@ -32,28 +33,37 @@ contract GenesisEthscriptions is Ethscriptions {
         require(ethscriptions[params.ethscriptionId].creator == address(0), "Ethscription already exists");
 
         // Check protocol uniqueness using content URI hash
-        if (firstEthscriptionByContentUri[params.contentUriHash] != bytes32(0)) {
+        if (firstEthscriptionByContentUri[params.contentUriSha] != bytes32(0)) {
             if (!params.esip6) revert DuplicateContentUri();
         }
 
-        // Store content and get content SHA (reusing parent's helper)
-        bytes32 contentSha = _storeContent(params.content);
+        // Store content and get content hash (reusing parent's helper)
+        bytes32 contentHash = _storeContent(params.content);
 
         // Mark content URI as used by storing this ethscription's tx hash
-        firstEthscriptionByContentUri[params.contentUriHash] = params.ethscriptionId;
+        firstEthscriptionByContentUri[params.contentUriSha] = params.ethscriptionId;
+
+        // Store metadata (mimetype, protocol, operation)
+        // Genesis ethscriptions have no protocol parameters
+        bytes32 metaRef = MetaStoreLib.store(
+            params.mimetype,
+            params.protocolParams.protocolName,
+            params.protocolParams.operation,
+            metadataStorage
+        );
 
         // Set all values including genesis-specific ones
         ethscriptions[params.ethscriptionId] = EthscriptionStorage({
             // Fixed-size fields
-            contentUriHash: params.contentUriHash,
-            contentSha: contentSha,
+            contentUriSha: params.contentUriSha,
+            contentHash: contentHash,
             l1BlockHash: l1BlockHash,
             // Packed slot 3
             creator: creator,
             createdAt: uint48(createdAt),
             l1BlockNumber: uint48(l1BlockNumber),
-            // Dynamic field
-            mimetype: params.mimetype,
+            // Metadata reference
+            metaRef: metaRef,
             // Packed slot N
             initialOwner: params.initialOwner,
             ethscriptionNumber: uint48(totalSupply()),
@@ -333,7 +343,7 @@ contract L2Genesis is Script {
         // The JSON already has all the properly processed data
         Ethscriptions.CreateEthscriptionParams memory params;
         params.ethscriptionId = vm.parseJsonBytes32(json, string.concat(basePath, ".transaction_hash"));
-        params.contentUriHash = vm.parseJsonBytes32(json, string.concat(basePath, ".content_uri_hash"));
+        params.contentUriSha = vm.parseJsonBytes32(json, string.concat(basePath, ".content_uri_hash"));
         params.initialOwner = initialOwner;
         params.content = vm.parseJsonBytes(json, string.concat(basePath, ".content"));
         params.mimetype = vm.parseJsonString(json, string.concat(basePath, ".mimetype"));

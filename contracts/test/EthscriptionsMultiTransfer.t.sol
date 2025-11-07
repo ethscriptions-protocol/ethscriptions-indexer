@@ -231,7 +231,7 @@ contract EthscriptionsMultiTransferTest is TestSetup {
             "Ethscription Number",
             "Creator",
             "Initial Owner",
-            "Content SHA",
+            "Content Hash",
             "MIME Type",
             "ESIP-6",
             "L1 Block Number",

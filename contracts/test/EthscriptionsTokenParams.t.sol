@@ -11,7 +11,7 @@ contract EthscriptionsTokenParamsTest is TestSetup {
         // Create a token deploy ethscription
         string memory tokenJson = '{"p":"erc-20","op":"deploy","tick":"eths","max":"21000000","lim":"1000"}';
         string memory dataUri = string.concat("data:,", tokenJson);
-        bytes32 contentUriHash = sha256(bytes(dataUri));
+        bytes32 contentUriSha = sha256(bytes(dataUri));
 
         ERC20FixedDenominationManager.DeployOperation memory deployOp = ERC20FixedDenominationManager.DeployOperation({
             tick: "eths",
@@ -21,7 +21,7 @@ contract EthscriptionsTokenParamsTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(1)),
-            contentUriHash: contentUriHash,
+            contentUriSha: contentUriSha,
             initialOwner: address(this),
             content: bytes(tokenJson),
             mimetype: "text/plain",
@@ -49,7 +49,7 @@ contract EthscriptionsTokenParamsTest is TestSetup {
         // Create a token mint ethscription
         string memory tokenJson = '{"p":"erc-20","op":"mint","tick":"eths","id":"1","amt":"1000"}';
         string memory dataUri = string.concat("data:,", tokenJson);
-        bytes32 contentUriHash = sha256(bytes(dataUri));
+        bytes32 contentUriSha = sha256(bytes(dataUri));
 
         ERC20FixedDenominationManager.MintOperation memory mintOp = ERC20FixedDenominationManager.MintOperation({
             tick: "eths",
@@ -59,7 +59,7 @@ contract EthscriptionsTokenParamsTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(2)),
-            contentUriHash: contentUriHash,
+            contentUriSha: contentUriSha,
             initialOwner: address(this),
             content: bytes(tokenJson),
             mimetype: "text/plain",
@@ -82,11 +82,11 @@ contract EthscriptionsTokenParamsTest is TestSetup {
         // Create a regular non-token ethscription
         string memory content = "Hello, World!";
         string memory dataUri = string.concat("data:,", content);
-        bytes32 contentUriHash = sha256(bytes(dataUri));
+        bytes32 contentUriSha = sha256(bytes(dataUri));
 
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(3)),
-            contentUriHash: contentUriHash,
+            contentUriSha: contentUriSha,
             initialOwner: address(this),
             content: bytes(content),
             mimetype: "text/plain",
@@ -119,7 +119,7 @@ contract EthscriptionsTokenParamsTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory deployParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: keccak256("deploy_tx"),
-            contentUriHash: sha256(bytes(deployUri)),
+            contentUriSha: sha256(bytes(deployUri)),
             initialOwner: address(this),
             content: bytes(deployJson),
             mimetype: "application/json",
@@ -145,7 +145,7 @@ contract EthscriptionsTokenParamsTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory mintParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: keccak256("mint_tx"),
-            contentUriHash: sha256(bytes(mintUri)),
+            contentUriSha: sha256(bytes(mintUri)),
             initialOwner: address(this),
             content: bytes(mintJson),
             mimetype: "application/json",

@@ -13,8 +13,8 @@ data['ethscriptions'].each do |ethscription|
   content_uri = ethscription['content_uri']
 
   # Calculate content URI hash (as hex string with 0x prefix for JSON)
-  content_uri_hash = '0x' + Digest::SHA256.hexdigest(content_uri)
-  ethscription['content_uri_hash'] = content_uri_hash
+  content_uri_sha = '0x' + Digest::SHA256.hexdigest(content_uri)
+  ethscription['content_uri_sha'] = content_uri_sha
 
   # Parse the data URI
   if content_uri.start_with?('data:')
@@ -56,4 +56,4 @@ end
 File.write(json_path, JSON.pretty_generate(data))
 
 puts "Processed #{data['ethscriptions'].length} ethscriptions"
-puts "Added content_uri_hash and content fields"
+puts "Added content_uri_sha and content fields"

@@ -72,8 +72,8 @@ contract EthscriptionsProverTest is TestSetup {
         assertEq(decodedProof.previousOwner, alice);
         // assertEq(decodedProof.ethscriptionNumber, 0);
         assertEq(decodedProof.esip6, false);
-        assertTrue(decodedProof.contentSha != bytes32(0));
-        assertTrue(decodedProof.contentUriHash != bytes32(0));
+        assertTrue(decodedProof.contentHash != bytes32(0));
+        assertTrue(decodedProof.contentUriSha != bytes32(0));
         // l1BlockHash can be zero in test environment
         assertEq(decodedProof.l1BlockHash, bytes32(0));
     }
@@ -101,7 +101,7 @@ contract EthscriptionsProverTest is TestSetup {
         ethscriptions.createEthscription(
             Ethscriptions.CreateEthscriptionParams({
                 ethscriptionId: txHash1,
-                contentUriHash: keccak256("data:,test1"),
+                contentUriSha: keccak256("data:,test1"),
                 initialOwner: alice,
                 content: bytes("test1"),
                 mimetype: "text/plain",
@@ -115,7 +115,7 @@ contract EthscriptionsProverTest is TestSetup {
         ethscriptions.createEthscription(
             Ethscriptions.CreateEthscriptionParams({
                 ethscriptionId: txHash2,
-                contentUriHash: keccak256("data:,test2"),
+                contentUriSha: keccak256("data:,test2"),
                 initialOwner: bob,
                 content: bytes("test2"),
                 mimetype: "text/plain",
@@ -135,7 +135,7 @@ contract EthscriptionsProverTest is TestSetup {
         ethscriptions.createEthscription(
             Ethscriptions.CreateEthscriptionParams({
                 ethscriptionId: txHash3,
-                contentUriHash: keccak256("data:,test3"),
+                contentUriSha: keccak256("data:,test3"),
                 initialOwner: charlie,
                 content: bytes("test3"),
                 mimetype: "text/plain",

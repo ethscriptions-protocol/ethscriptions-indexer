@@ -14,8 +14,17 @@ library EthscriptionsRendererLib {
     /// @notice Build attributes JSON array from ethscription data
     /// @param etsc Storage pointer to the ethscription
     /// @param ethscriptionId The ethscription ID (L1 tx hash)
+    /// @param mimetype The MIME type string (decoded from metadata)
+    /// @param protocolName The protocol name (empty if none)
+    /// @param operation The operation name (empty if none)
     /// @return JSON string of attributes array
-    function buildAttributes(Ethscriptions.EthscriptionStorage storage etsc, bytes32 ethscriptionId)
+    function buildAttributes(
+        Ethscriptions.EthscriptionStorage storage etsc,
+        bytes32 ethscriptionId,
+        string memory mimetype,
+        string memory protocolName,
+        string memory operation
+    )
         internal
         view
         returns (string memory)
@@ -33,12 +42,32 @@ library EthscriptionsRendererLib {
         );
 
         string memory part2 = string.concat(
-            '"},{"trait_type":"Content SHA","value":"',
-            uint256(etsc.contentSha).toHexString(),
+            '"},{"trait_type":"Content Hash","value":"',
+            uint256(etsc.contentHash).toHexString(),
             '"},{"trait_type":"MIME Type","value":"',
-            etsc.mimetype.escapeJSON(),
+            mimetype.escapeJSON(),
             '"},{"trait_type":"ESIP-6","value":"',
-            etsc.esip6 ? "true" : "false",
+            etsc.esip6 ? "true" : "false"
+        );
+
+        // Add protocol info if present
+        string memory protocolAttrs = "";
+        if (bytes(protocolName).length > 0) {
+            protocolAttrs = string.concat(
+                '"},{"trait_type":"Protocol","value":"',
+                protocolName.escapeJSON()
+            );
+            if (bytes(operation).length > 0) {
+                protocolAttrs = string.concat(
+                    protocolAttrs,
+                    '"},{"trait_type":"Operation","value":"',
+                    operation.escapeJSON()
+                );
+            }
+        }
+
+        string memory part3 = string.concat(
+            protocolAttrs,
             '"},{"trait_type":"L1 Block Number","display_type":"number","value":',
             uint256(etsc.l1BlockNumber).toString(),
             '},{"trait_type":"L2 Block Number","display_type":"number","value":',
@@ -48,35 +77,35 @@ library EthscriptionsRendererLib {
             '}]'
         );
 
-        return string.concat(part1, part2);
+        return string.concat(part1, part2, part3);
     }
 
     /// @notice Generate the media URI for an ethscription
-    /// @param etsc Storage pointer to the ethscription
+    /// @param mimetype The MIME type string
     /// @param content The content bytes
     /// @return mediaType Either "image" or "animation_url"
     /// @return mediaUri The data URI for the media
-    function getMediaUri(Ethscriptions.EthscriptionStorage storage etsc, bytes memory content)
+    function getMediaUri(string memory mimetype, bytes memory content)
         internal
-        view
+        pure
         returns (string memory mediaType, string memory mediaUri)
     {
-        if (etsc.mimetype.startsWith("image/")) {
+        if (mimetype.startsWith("image/")) {
             // Image content: wrap in SVG for pixel-perfect rendering
-            string memory imageDataUri = constructDataURI(etsc.mimetype, content);
+            string memory imageDataUri = constructDataURI(mimetype, content);
             string memory svg = wrapImageInSVG(imageDataUri);
             mediaUri = constructDataURI("image/svg+xml", bytes(svg));
             return ("image", mediaUri);
         } else {
             // Non-image content: use animation_url
-            if (etsc.mimetype.startsWith("video/") ||
-                etsc.mimetype.startsWith("audio/") ||
-                etsc.mimetype.eq("text/html")) {
+            if (mimetype.startsWith("video/") ||
+                mimetype.startsWith("audio/") ||
+                mimetype.eq("text/html")) {
                 // Video, audio, and HTML pass through directly as data URIs
-                mediaUri = constructDataURI(etsc.mimetype, content);
+                mediaUri = constructDataURI(mimetype, content);
             } else {
                 // Everything else (text/plain, application/json, etc.) uses the HTML viewer
-                mediaUri = createTextViewerDataURI(etsc.mimetype, content);
+                mediaUri = createTextViewerDataURI(mimetype, content);
             }
             return ("animation_url", mediaUri);
         }
@@ -85,18 +114,24 @@ library EthscriptionsRendererLib {
     /// @notice Build complete token URI JSON
     /// @param etsc Storage pointer to the ethscription
     /// @param ethscriptionId The ethscription ID (L1 tx hash)
+    /// @param mimetype The MIME type string (decoded from metadata)
+    /// @param protocolName The protocol name (empty if none)
+    /// @param operation The operation name (empty if none)
     /// @param content The content bytes
     /// @return The complete base64-encoded data URI
     function buildTokenURI(
         Ethscriptions.EthscriptionStorage storage etsc,
         bytes32 ethscriptionId,
+        string memory mimetype,
+        string memory protocolName,
+        string memory operation,
         bytes memory content
     ) internal view returns (string memory) {
         // Get media URI
-        (string memory mediaType, string memory mediaUri) = getMediaUri(etsc, content);
+        (string memory mediaType, string memory mediaUri) = getMediaUri(mimetype, content);
 
         // Build attributes
-        string memory attributes = buildAttributes(etsc, ethscriptionId);
+        string memory attributes = buildAttributes(etsc, ethscriptionId, mimetype, protocolName, operation);
 
         // Build JSON
         string memory json = string.concat(
@@ -109,7 +144,7 @@ library EthscriptionsRendererLib {
             '","',
             mediaType,
             '":"',
-            mediaUri.escapeJSON(),
+            mediaUri,
             '","attributes":',
             attributes,
             '}'
@@ -132,7 +167,7 @@ library EthscriptionsRendererLib {
     {
         return string.concat(
             "data:",
-            mimetype,
+            mimetype.escapeJSON(),
             ";base64,",
             Base64.encode(content)
         );

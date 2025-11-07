@@ -51,7 +51,7 @@ contract Multicall3Test is TestSetup {
             vm.prank(creator);
             Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
                 ethscriptionId: txHash,
-                contentUriHash: keccak256(abi.encodePacked("data:text/plain,Test", i)),
+                contentUriSha: keccak256(abi.encodePacked("data:text/plain,Test", i)),
                 initialOwner: initialOwner,
                 content: bytes(string(abi.encodePacked("Test content ", Strings.toString(i)))),
                 mimetype: "text/plain",
@@ -113,7 +113,7 @@ contract Multicall3Test is TestSetup {
         vm.prank(creator);
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: txHash,
-            contentUriHash: keccak256("data:text/plain,Mixed test"),
+            contentUriSha: keccak256("data:text/plain,Mixed test"),
             initialOwner: initialOwner,
             content: bytes("Mixed test content"),
             mimetype: "text/plain",

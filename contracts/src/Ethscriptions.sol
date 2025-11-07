@@ -3,8 +3,8 @@ pragma solidity 0.8.24;
 
 import "./ERC721EthscriptionsSequentialEnumerableUpgradeable.sol";
 import {LibString} from "solady/utils/LibString.sol";
-import "./libraries/SSTORE2Unlimited.sol";
-import "./libraries/BytePackLib.sol";
+import "./libraries/DedupedBlobStore.sol";
+import "./libraries/MetaStoreLib.sol";
 import "./libraries/EthscriptionsRendererLib.sol";
 import "./EthscriptionsProver.sol";
 import "./libraries/Predeploys.sol";
@@ -17,7 +17,6 @@ import "./libraries/Constants.sol";
 /// @dev Uses ethscription number as token ID and name, while transaction hash remains the primary identifier for function calls
 contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     using LibString for *;
-    using EthscriptionsRendererLib for EthscriptionStorage;
 
     // =============================================================
     //                          STRUCTS
@@ -26,15 +25,15 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @notice Internal storage struct for ethscriptions (optimized for storage)
     struct EthscriptionStorage {
         // Full slots
-        bytes32 contentUriHash;
-        bytes32 contentSha;
+        bytes32 contentUriSha;  // sha256 of content URI (for protocol uniqueness check)
+        bytes32 contentHash;    // keccak256 of content (for deduplication)
         bytes32 l1BlockHash;
         // Packed slot (32 bytes)
         address creator;
         uint48  createdAt;
         uint48  l1BlockNumber;
-        // Dynamic
-        string  mimetype;
+        // Metadata reference (replaces dynamic mimetype string)
+        bytes32 metaRef;  // Reference to deduplicated metadata (mimetype, protocol, operation)
         // Packed slot (27 bytes used, 5 free)
         address initialOwner;
         uint48  ethscriptionNumber;
@@ -52,7 +51,7 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
 
     struct CreateEthscriptionParams {
         bytes32 ethscriptionId;
-        bytes32 contentUriHash;  // SHA256 of raw content URI (for protocol uniqueness)
+        bytes32 contentUriSha;  // sha256 of content URI (for protocol uniqueness)
         address initialOwner;
         bytes content;           // Raw decoded bytes (not Base64)
         string mimetype;
@@ -78,8 +77,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         uint256 ethscriptionNumber;    // Token ID
 
         // Core metadata
-        bytes32 contentUriHash;
-        bytes32 contentSha;
+        bytes32 contentUriSha;         // sha256 of content URI (protocol)
+        bytes32 contentHash;           // keccak256 of content
         string  mimetype;
         bytes   content;               // Full content bytes (empty when includeContent=false)
 
@@ -97,6 +96,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
 
         // Protocol
         bool    esip6;
+        string  protocolName;          // Protocol identifier (empty if none)
+        string  operation;             // Operation name (empty if none)
     }
 
     // =============================================================
@@ -124,8 +125,11 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @dev Ethscription ID (L1 tx hash) => Ethscription data
     mapping(bytes32 => EthscriptionStorage) internal ethscriptions;
 
-    /// @dev Content SHA => packed content (for <32 bytes) or SSTORE2 pointer (for >=32 bytes)
-    mapping(bytes32 => bytes32) public contentStorageBySha;
+    /// @dev Content hash (keccak256) => packed content (for <32 bytes) or SSTORE2 pointer (for >=32 bytes)
+    mapping(bytes32 => bytes32) public contentStorage;
+
+    /// @dev Metadata blob hash (keccak256) => packed metadata or SSTORE2 pointer (for deduplicated metadata storage)
+    mapping(bytes32 => bytes32) public metadataStorage;
 
     /// @dev Content URI hash => first ethscription tx hash that used it (for protocol uniqueness check)
     /// @dev bytes32(0) means unused, non-zero means the content URI has been used
@@ -136,9 +140,6 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
 
     /// @dev Protocol registry - maps protocol names to handler addresses
     mapping(string => address) public protocolHandlers;
-
-    /// @dev Track which protocol an ethscription uses
-    mapping(bytes32 => string) public protocolOf;
 
     /// @dev Array of genesis ethscription transaction hashes that need events emitted
     /// @notice This array is populated during genesis and cleared (by popping) when events are emitted
@@ -169,8 +170,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         bytes32 indexed ethscriptionId,
         address indexed creator,
         address indexed initialOwner,
-        bytes32 contentUriHash,
-        bytes32 contentSha,
+        bytes32 contentUriSha,
+        bytes32 contentHash,
         uint256 ethscriptionNumber
     );
 
@@ -231,12 +232,14 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @param protocol The protocol identifier (e.g., "erc-20-fixed-denomination", "erc-721-ethscriptions-collection")
     /// @param handler The address of the handler contract
     /// @dev Only callable by the depositor address (used during genesis setup)
+    /// @dev Protocol names should already be normalized (lowercase) by the caller
     function registerProtocol(string calldata protocol, address handler) external {
         if (msg.sender != Predeploys.DEPOSITOR_ACCOUNT) revert OnlyDepositor();
         if (handler == address(0)) revert InvalidHandler();
         if (protocolHandlers[protocol] != address(0)) revert ProtocolAlreadyRegistered();
 
         protocolHandlers[protocol] = handler;
+
         emit ProtocolRegistered(protocol, handler);
     }
 
@@ -255,25 +258,33 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         if (creator == address(0)) revert InvalidCreator();
         if (_ethscriptionExists(params.ethscriptionId)) revert EthscriptionAlreadyExists();
         
-        bool contentUriAlreadySeen = firstEthscriptionByContentUri[params.contentUriHash] != bytes32(0);
+        bool contentUriAlreadySeen = firstEthscriptionByContentUri[params.contentUriSha] != bytes32(0);
 
         if (contentUriAlreadySeen) {
             if (!params.esip6) revert DuplicateContentUri();
         } else {
-            firstEthscriptionByContentUri[params.contentUriHash] = params.ethscriptionId;
+            firstEthscriptionByContentUri[params.contentUriSha] = params.ethscriptionId;
         }
 
-        // Store content and get content SHA (of raw bytes)
-        bytes32 contentSha = _storeContent(params.content);
+        // Store content and get content hash (keccak256 of raw bytes)
+        bytes32 contentHash = _storeContent(params.content);
+
+        // Store metadata (mimetype, protocol, operation)
+        bytes32 metaRef = MetaStoreLib.store(
+            params.mimetype,
+            params.protocolParams.protocolName,
+            params.protocolParams.operation,
+            metadataStorage
+        );
 
         ethscriptions[params.ethscriptionId] = EthscriptionStorage({
-            contentUriHash: params.contentUriHash,
-            contentSha: contentSha,
+            contentUriSha: params.contentUriSha,
+            contentHash: contentHash,
             l1BlockHash: l1Block.hash(),
             creator: creator,
             createdAt: uint48(block.timestamp),
             l1BlockNumber: uint48(l1Block.number()),
-            mimetype: params.mimetype,
+            metaRef: metaRef,
             initialOwner: params.initialOwner,
             ethscriptionNumber: uint48(totalSupply()),
             esip6: params.esip6,
@@ -299,8 +310,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
             params.ethscriptionId,
             creator,
             params.initialOwner,
-            params.contentUriHash,
-            contentSha,
+            params.contentUriSha,
+            contentHash,
             tokenId
         );
 
@@ -398,8 +409,12 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         // Get content
         bytes memory content = _getEthscriptionContent(id);
 
-        // Build complete token URI using the library - it handles everything internally
-        return EthscriptionsRendererLib.buildTokenURI(ethscription, id, content);
+        // Decode metadata from reference
+        (string memory mimetype, string memory protocolName, string memory operation) =
+            MetaStoreLib.decode(ethscription.metaRef);
+
+        // Build complete token URI using the library
+        return EthscriptionsRendererLib.buildTokenURI(ethscription, id, mimetype, protocolName, operation, content);
     }
 
     /// @notice Get the media URI for an ethscription (image or animation_url)
@@ -409,7 +424,11 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     function getMediaUri(bytes32 ethscriptionId) external view returns (string memory mediaType, string memory mediaUri) {
         EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
         bytes memory content = _getEthscriptionContent(ethscriptionId);
-        return ethscription.getMediaUri(content);
+
+        // Decode mimetype from metadata reference
+        string memory mimetype = MetaStoreLib.getMimetype(ethscription.metaRef);
+
+        return EthscriptionsRendererLib.getMediaUri(mimetype, content);
     }
 
     // -------------------- Data Retrieval --------------------
@@ -421,15 +440,19 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     function _buildEthscription(bytes32 ethscriptionId, bool includeContent) internal view returns (Ethscription memory) {
         EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
 
+        // Decode metadata from reference
+        (string memory mimetype, string memory protocolName, string memory operation) =
+            MetaStoreLib.decode(ethscription.metaRef);
+
         return Ethscription({
             // Identity
             ethscriptionId: ethscriptionId,
             ethscriptionNumber: uint256(ethscription.ethscriptionNumber),
 
             // Core metadata
-            contentUriHash: ethscription.contentUriHash,
-            contentSha: ethscription.contentSha,
-            mimetype: ethscription.mimetype,
+            contentUriSha: ethscription.contentUriSha,
+            contentHash: ethscription.contentHash,
+            mimetype: mimetype,
             content: includeContent ? _getEthscriptionContent(ethscriptionId) : bytes(""),
 
             // Ownership
@@ -445,7 +468,9 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
             createdAt: uint256(ethscription.createdAt),
 
             // Protocol
-            esip6: ethscription.esip6
+            esip6: ethscription.esip6,
+            protocolName: protocolName,
+            operation: operation
         });
     }
 
@@ -595,17 +620,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     /// @dev Kept as internal for tokenURI and other internal uses
     function _getEthscriptionContent(bytes32 ethscriptionId) internal view returns (bytes memory) {
         EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        bytes32 ref = contentStorageBySha[ethscription.contentSha];
-
-        // Check if it's inline content using BytePackLib
-        if (BytePackLib.isPacked(ref)) {
-            return BytePackLib.unpack(ref);
-        }
-
-        // It's a pointer to SSTORE2 contract
-        address pointer = address(uint160(uint256(ref)));
-
-        return SSTORE2Unlimited.read(pointer);
+        // Use shared retrieval logic
+        return DedupedBlobStore.readByHash(ethscription.contentHash, contentStorage);
     }
 
     // ---------------- Ownership & Existence Checks ----------------
@@ -644,6 +660,39 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         bytes32 id = tokenIdToEthscriptionId[tokenId];
         if (!_ethscriptionExists(id)) revert TokenDoesNotExist();
         return id;
+    }
+
+    // -------------------- Metadata Helpers --------------------
+
+    /// @notice Get the MIME type of an ethscription
+    /// @param ethscriptionId The ethscription ID to query
+    /// @return mimetype The MIME type string
+    function getMimetype(bytes32 ethscriptionId) external view returns (string memory) {
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        return MetaStoreLib.getMimetype(ethscription.metaRef);
+    }
+
+    /// @notice Get the protocol information for an ethscription
+    /// @param ethscriptionId The ethscription ID to query
+    /// @return protocolName The protocol identifier (empty if none)
+    /// @return operation The operation name (empty if none)
+    function getProtocol(bytes32 ethscriptionId) external view returns (string memory protocolName, string memory operation) {
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        return MetaStoreLib.getProtocol(ethscription.metaRef);
+    }
+
+    /// @notice Get complete metadata for an ethscription
+    /// @param ethscriptionId The ethscription ID to query
+    /// @return mimetype The MIME type
+    /// @return protocolName The protocol identifier (empty if none)
+    /// @return operation The operation name (empty if none)
+    function getMetadata(bytes32 ethscriptionId) external view returns (
+        string memory mimetype,
+        string memory protocolName,
+        string memory operation
+    ) {
+        EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
+        return MetaStoreLib.decode(ethscription.metaRef);
     }
 
     // =============================================================
@@ -689,31 +738,13 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         return ethscriptions[ethscriptionId].creator != address(0);
     }
 
-    /// @notice Internal helper to store content and return its SHA
+    /// @notice Internal helper to store content and return its hash
     /// @param content The raw content bytes to store
-    /// @return contentSha The SHA256 hash of the content
-    function _storeContent(bytes calldata content) internal returns (bytes32 contentSha) {
-        // Compute SHA256 hash of content first
-        contentSha = sha256(content);
-
-        // Check if content already exists
-        bytes32 existing = contentStorageBySha[contentSha];
-        if (existing != bytes32(0)) {
-            // Content already stored, just return the SHA
-            return contentSha;
-        }
-
-        // Store based on size
-        if (content.length <= 31) {
-            // Pack small content directly into bytes32 (0-31 bytes)
-            contentStorageBySha[contentSha] = BytePackLib.packCalldata(content);
-        } else {
-            // Deploy via SSTORE2 for larger content (32+ bytes)
-            address pointer = SSTORE2Unlimited.write(content);
-            contentStorageBySha[contentSha] = bytes32(uint256(uint160(pointer)));
-        }
-
-        return contentSha;
+    /// @return contentHash The keccak256 hash of the content
+    function _storeContent(bytes calldata content) internal returns (bytes32 contentHash) {
+        // Use shared deduplication logic with keccak256
+        (contentHash,) = DedupedBlobStore.storeCalldata(content, contentStorage);
+        return contentHash;
     }
 
     function _queueForProving(bytes32 ethscriptionId) internal {
@@ -733,9 +764,6 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         if (bytes(protocolParams.protocolName).length == 0) {
             return;
         }
-
-        // Track which protocol this ethscription uses
-        protocolOf[ethscriptionId] = protocolParams.protocolName;
 
         address handler = protocolHandlers[protocolParams.protocolName];
 
@@ -770,14 +798,17 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         address from,
         address to
     ) internal {
-        string memory protocol = protocolOf[ethscriptionId];
+        // Get protocol from metadata
+        EthscriptionStorage storage etsc = ethscriptions[ethscriptionId];
+        (string memory protocolName,) = MetaStoreLib.getProtocol(etsc.metaRef);
 
         // Skip if no protocol assigned
-        if (bytes(protocol).length == 0) {
+        if (bytes(protocolName).length == 0) {
             return;
         }
 
-        address handler = protocolHandlers[protocol];
+        // Protocol names are stored normalized (lowercase)
+        address handler = protocolHandlers[protocolName];
 
         // Skip if no handler is registered
         if (handler == address(0)) {
@@ -787,9 +818,9 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
         // Use try/catch for cleaner error handling
         try IProtocolHandler(handler).onTransfer(ethscriptionId, from, to) {
             // onTransfer doesn't return data, so pass empty bytes
-            emit ProtocolHandlerSuccess(ethscriptionId, protocol, "");
+            emit ProtocolHandlerSuccess(ethscriptionId, protocolName, "");
         } catch (bytes memory revertData) {
-            emit ProtocolHandlerFailed(ethscriptionId, protocol, revertData);
+            emit ProtocolHandlerFailed(ethscriptionId, protocolName, revertData);
         }
     }
 
@@ -844,8 +875,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
                 ethscriptionId,
                 ethscription.creator,
                 ethscription.initialOwner,
-                ethscription.contentUriHash,
-                ethscription.contentSha,
+                ethscription.contentUriSha,
+                ethscription.contentHash,
                 ethscription.ethscriptionNumber
             );
         }

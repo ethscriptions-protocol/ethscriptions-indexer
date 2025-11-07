@@ -48,7 +48,7 @@ abstract contract TestSetup is Test {
     ) internal pure returns (Ethscriptions.CreateEthscriptionParams memory) {
         // Parse the data URI to extract needed info
         bytes memory contentUriBytes = bytes(dataUri);
-        bytes32 contentUriHash = sha256(contentUriBytes);  // Use SHA-256 to match production
+        bytes32 contentUriSha = sha256(contentUriBytes);  // Use SHA-256 to match production
 
         // Simple parsing for tests
         bytes memory content;
@@ -116,7 +116,7 @@ abstract contract TestSetup is Test {
 
         return Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: transactionHash,
-            contentUriHash: contentUriHash,
+            contentUriSha: contentUriSha,
             initialOwner: initialOwner,
             content: content,
             mimetype: mimetype,

@@ -36,7 +36,7 @@ contract CollectionsProtocolTest is TestSetup {
         // First, create the ethscription that will represent this collection
         Ethscriptions.CreateEthscriptionParams memory ethscriptionParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: txHash,
-            contentUriHash: keccak256("test-collection-content"),
+            contentUriSha: keccak256("test-collection-content"),
             initialOwner: alice,
             content: bytes("test-collection-content"),
             mimetype: "text/plain",
@@ -102,7 +102,7 @@ contract CollectionsProtocolTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: txHash,
-            contentUriHash: keccak256(bytes(json)),
+            contentUriSha: keccak256(bytes(json)),
             initialOwner: alice,
             content: bytes(json),
             mimetype: "application/json",
@@ -162,7 +162,7 @@ contract CollectionsProtocolTest is TestSetup {
         // First, create the ethscription that will represent this collection
         Ethscriptions.CreateEthscriptionParams memory ethscriptionParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: txHash,
-            contentUriHash: keccak256("call-test-content"),
+            contentUriSha: keccak256("call-test-content"),
             initialOwner: alice,
             content: bytes("call-test-content"),
             mimetype: "text/plain",

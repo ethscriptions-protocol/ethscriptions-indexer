@@ -46,7 +46,7 @@ contract AddressPredictionTest is TestSetup {
         // First, create the ethscription that will represent this collection
         Ethscriptions.CreateEthscriptionParams memory ethscriptionParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: collectionId,
-            contentUriHash: keccak256("collection-content"),
+            contentUriSha: keccak256("collection-content"),
             initialOwner: creator,
             content: bytes("collection-content"),
             mimetype: "text/plain",

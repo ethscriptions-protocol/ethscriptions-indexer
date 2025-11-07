@@ -35,7 +35,7 @@ contract EthscriptionsTokenTest is TestSetup {
         bytes memory data
     ) internal pure returns (Ethscriptions.CreateEthscriptionParams memory) {
         bytes memory contentUriBytes = bytes(contentUri);
-        bytes32 contentUriHash = sha256(contentUriBytes);  // Use SHA-256 to match production
+        bytes32 contentUriSha = sha256(contentUriBytes);  // Use SHA-256 to match production
 
         // Extract content after "data:,"
         bytes memory content;
@@ -48,7 +48,7 @@ contract EthscriptionsTokenTest is TestSetup {
 
         return Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: transactionHash,
-            contentUriHash: contentUriHash,
+            contentUriSha: contentUriSha,
             initialOwner: initialOwner,
             content: content,
             mimetype: "text/plain",

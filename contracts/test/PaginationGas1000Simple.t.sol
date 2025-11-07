@@ -34,7 +34,7 @@ contract PaginationGas1000SimpleTest is TestSetup {
             vm.prank(creator);
             Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
                 ethscriptionId: txHash,
-                contentUriHash: keccak256(abi.encodePacked("uri", startId + i)),
+                contentUriSha: keccak256(abi.encodePacked("uri", startId + i)),
                 initialOwner: owner,
                 content: content,
                 mimetype: "text/plain",

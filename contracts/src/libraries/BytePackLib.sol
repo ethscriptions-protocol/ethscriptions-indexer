@@ -25,6 +25,23 @@ library BytePackLib {
         }
     }
 
+    /// @notice Pack bytes memory up to 31 bytes into a bytes32
+    /// @dev Memory version for when data is in memory
+    /// @param data The data to pack (must be <= 31 bytes)
+    /// @return packed The packed bytes32 value
+    function pack(bytes memory data) internal pure returns (bytes32 packed) {
+        uint256 len = data.length;
+        if (len >= 32) revert ContentTooLarge(len);
+
+        assembly {
+            // Pack: tag byte (len+1) | first 31 bytes of data
+            packed := or(
+                shl(248, add(len, 1)),      // Tag in first byte
+                shr(8, mload(add(data, 0x20)))  // Data in remaining 31 bytes (skip length prefix)
+            )
+        }
+    }
+
     /// @notice Unpack a bytes32 value into bytes
     /// @dev Extracts the data based on the tag byte (length + 1)
     /// @param packed The packed bytes32 value

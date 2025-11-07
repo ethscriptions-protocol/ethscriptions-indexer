@@ -91,16 +91,16 @@ class EventDecoder
 
       return nil if data_bytes.length < 96  # Need at least 3 * 32 bytes
 
-      content_uri_hash = '0x' + data_bytes[0, 32].unpack1('H*')
-      content_sha = '0x' + data_bytes[32, 32].unpack1('H*')
+      content_uri_sha = '0x' + data_bytes[0, 32].unpack1('H*')
+      content_hash = '0x' + data_bytes[32, 32].unpack1('H*')
       ethscription_number = data_bytes[64, 32].unpack1('H*').to_i(16)
 
       {
         tx_hash: tx_hash,
         creator: creator,
         initial_owner: initial_owner,
-        content_uri_hash: content_uri_hash,
-        content_sha: content_sha,
+        content_uri_sha: content_uri_sha,
+        content_hash: content_hash,
         ethscription_number: ethscription_number
       }
     rescue => e

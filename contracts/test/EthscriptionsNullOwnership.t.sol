@@ -22,15 +22,15 @@ contract EthscriptionsNullOwnershipTest is TestSetup {
         );
 
         // Expect only one EthscriptionCreated event (no EthscriptionTransferred since from == address(0))
-        bytes32 contentUriHash = sha256(bytes("data:text/plain,Null owned")); // Full data URI hash
-        bytes32 contentSha = sha256(bytes("Null owned")); // Raw content, not data URI
+        bytes32 contentUriSha = sha256(bytes("data:text/plain,Null owned")); // Full data URI hash
+        bytes32 contentHash = keccak256(bytes("Null owned")); // Raw content hash (keccak256, not sha256)
         vm.expectEmit(true, true, true, true);
         emit Ethscriptions.EthscriptionCreated(
             txHash,
             alice, // creator
             address(0), // initialOwner
-            contentUriHash,
-            contentSha,
+            contentUriSha,
+            contentHash,
             11 // ethscription number (after 10 genesis)
         );
 

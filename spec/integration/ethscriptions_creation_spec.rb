@@ -400,7 +400,7 @@ RSpec.describe "Ethscription Creation", type: :integration do
         first_stored = get_ethscription_content(first_result[:ethscription_ids].first)
         second_stored = get_ethscription_content(second_result[:ethscription_ids].first)
 
-        expect(first_stored[:content_uri_hash]).to eq(second_stored[:content_uri_hash])
+        expect(first_stored[:content_uri_sha]).to eq(second_stored[:content_uri_sha])
         
         expect(first_stored[:esip6]).to be_truthy
         expect(second_stored[:esip6]).to be_truthy
@@ -533,7 +533,7 @@ RSpec.describe "Ethscription Creation", type: :integration do
 
           # Verify content URI hash
           expected_hash = Digest::SHA256.hexdigest(content_uri)
-          expect(stored[:content_uri_hash]).to eq("0x#{expected_hash}")
+          expect(stored[:content_uri_sha]).to eq("0x#{expected_hash}")
 
           # Verify block references are set
           expect(stored[:l1_block_number]).to be > 0
@@ -554,7 +554,7 @@ RSpec.describe "Ethscription Creation", type: :integration do
 
           # Verify content URI hash matches
           expected_hash = Digest::SHA256.hexdigest(content_uri)
-          expect(stored[:content_uri_hash]).to eq("0x#{expected_hash}")
+          expect(stored[:content_uri_sha]).to eq("0x#{expected_hash}")
         end
       end
     end

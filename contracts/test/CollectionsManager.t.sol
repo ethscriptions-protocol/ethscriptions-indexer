@@ -44,7 +44,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: COLLECTION_TX_HASH,
-            contentUriHash: sha256(bytes(collectionContent)),
+            contentUriSha: sha256(bytes(collectionContent)),
             initialOwner: alice,
             content: bytes(collectionContent),
             mimetype: "application/json",
@@ -128,7 +128,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         Ethscriptions.CreateEthscriptionParams memory ethscriptionParams =
             Ethscriptions.CreateEthscriptionParams({
                 ethscriptionId: collectionAndItemId,
-                contentUriHash: sha256(bytes("collection and item content")),
+                contentUriSha: sha256(bytes("collection and item content")),
                 initialOwner: alice,
                 content: bytes("collection and item content"),
                 mimetype: "text/plain",
@@ -208,7 +208,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         // Create the ethscription with protocol set to add itself to the collection
         Ethscriptions.CreateEthscriptionParams memory itemParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: ITEM1_TX_HASH,
-            contentUriHash: sha256(bytes(itemContent)),
+            contentUriSha: sha256(bytes(itemContent)),
             initialOwner: alice,
             content: bytes(itemContent),
             mimetype: "application/json",
@@ -303,7 +303,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory removeParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0xFEED)),
-            contentUriHash: sha256(bytes(removeContent)),
+            contentUriSha: sha256(bytes(removeContent)),
             initialOwner: alice,
             content: bytes(removeContent),
             mimetype: "application/json",
@@ -354,7 +354,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory removeParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0xBAD)),
-            contentUriHash: sha256(bytes("data:,remove")),
+            contentUriSha: sha256(bytes("data:,remove")),
             initialOwner: bob,
             content: bytes("remove"),
             mimetype: "text/plain",
@@ -414,7 +414,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
             // Create ethscription that adds itself to the collection
             Ethscriptions.CreateEthscriptionParams memory itemParams = Ethscriptions.CreateEthscriptionParams({
                 ethscriptionId: itemHashes[i],
-                contentUriHash: sha256(abi.encodePacked("item", i)),
+                contentUriSha: sha256(abi.encodePacked("item", i)),
                 initialOwner: owners[i],
                 content: abi.encodePacked("item", i),
                 mimetype: "text/plain",
@@ -488,7 +488,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         // Create the ethscription with image content
         Ethscriptions.CreateEthscriptionParams memory itemParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: ITEM1_TX_HASH,
-            contentUriHash: sha256(bytes(imageContent)),
+            contentUriSha: sha256(bytes(imageContent)),
             initialOwner: alice,
             content: bytes(imageContent),
             mimetype: "image/png",
@@ -557,7 +557,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory editParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0xED171)),
-            contentUriHash: sha256(bytes("edit")),
+            contentUriSha: sha256(bytes("edit")),
             initialOwner: alice,
             content: bytes("edit"),
             mimetype: "text/plain",
@@ -612,7 +612,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory itemParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: ITEM1_TX_HASH,
-            contentUriHash: sha256(bytes("item content")),
+            contentUriSha: sha256(bytes("item content")),
             initialOwner: alice,
             content: bytes("item content"),
             mimetype: "text/plain",
@@ -641,7 +641,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory editParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0xED172)),
-            contentUriHash: sha256(bytes("partial-edit")),
+            contentUriSha: sha256(bytes("partial-edit")),
             initialOwner: alice,
             content: bytes("partial-edit"),
             mimetype: "text/plain",
@@ -684,7 +684,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory editParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0xBADED17)),
-            contentUriHash: sha256(bytes("bad-edit")),
+            contentUriSha: sha256(bytes("bad-edit")),
             initialOwner: bob,
             content: bytes("bad-edit"),
             mimetype: "text/plain",
@@ -722,7 +722,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory editParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0x901743)),
-            contentUriHash: sha256(bytes("no-item")),
+            contentUriSha: sha256(bytes("no-item")),
             initialOwner: alice,
             content: bytes("no-item"),
             mimetype: "text/plain",
@@ -771,7 +771,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory syncParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0x5914C)),
-            contentUriHash: sha256(bytes("sync")),
+            contentUriSha: sha256(bytes("sync")),
             initialOwner: charlie,
             content: bytes("sync"),
             mimetype: "text/plain",
@@ -824,7 +824,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory syncParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0x5914CE)),
-            contentUriHash: sha256(bytes("sync-nonexistent")),
+            contentUriSha: sha256(bytes("sync-nonexistent")),
             initialOwner: alice,
             content: bytes("sync-nonexistent"),
             mimetype: "text/plain",
@@ -850,7 +850,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory syncParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0x5914CF)),
-            contentUriHash: sha256(bytes("sync-fake")),
+            contentUriSha: sha256(bytes("sync-fake")),
             initialOwner: alice,
             content: bytes("sync-fake"),
             mimetype: "text/plain",
@@ -878,7 +878,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory lockParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0x10CCC)),
-            contentUriHash: sha256(bytes("lock")),
+            contentUriSha: sha256(bytes("lock")),
             initialOwner: alice,
             content: bytes("lock"),
             mimetype: "text/plain",
@@ -907,7 +907,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         Ethscriptions.CreateEthscriptionParams memory editParams = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: bytes32(uint256(0x10C3ED)),
-            contentUriHash: sha256(bytes("locked-edit")),
+            contentUriSha: sha256(bytes("locked-edit")),
             initialOwner: alice,
             content: bytes("locked-edit"),
             mimetype: "text/plain",

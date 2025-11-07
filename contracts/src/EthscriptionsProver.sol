@@ -28,8 +28,8 @@ contract EthscriptionsProver {
     /// @notice Struct for ethscription data proof
     struct EthscriptionDataProof {
         bytes32 ethscriptionId;
-        bytes32 contentSha;
-        bytes32 contentUriHash;
+        bytes32 contentHash;
+        bytes32 contentUriSha;
         bytes32 l1BlockHash;
         address creator;
         address currentOwner;
@@ -144,8 +144,8 @@ contract EthscriptionsProver {
         // Create proof struct with all ethscription data
         EthscriptionDataProof memory proof = EthscriptionDataProof({
             ethscriptionId: ethscriptionId,
-            contentSha: ethscription.contentSha,
-            contentUriHash: ethscription.contentUriHash,
+            contentHash: ethscription.contentHash,
+            contentUriSha: ethscription.contentUriSha,
             l1BlockHash: proofInfo.l1BlockHash,
             creator: ethscription.creator,
             currentOwner: currentOwner,

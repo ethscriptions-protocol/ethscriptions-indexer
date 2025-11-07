@@ -15,21 +15,21 @@ contract EthscriptionsWithTestFunctions is Ethscriptions {
     /// @dev Test-only function to check if content exists
     function hasContent(bytes32 ethscriptionId) external view returns (bool) {
         EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        return contentStorageBySha[ethscription.contentSha] != bytes32(0);
+        return contentStorage[ethscription.contentHash] != bytes32(0);
     }
 
     /// @notice Get the content storage value for an ethscription
     /// @dev Test-only function to inspect storage (either packed bytes or SSTORE2 address)
     function getContentStorage(bytes32 ethscriptionId) external view returns (bytes32) {
         EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        return contentStorageBySha[ethscription.contentSha];
+        return contentStorage[ethscription.contentHash];
     }
 
     /// @notice Get the content pointer for an ethscription (only for SSTORE2 stored content)
     /// @dev Test-only function to inspect SSTORE2 address
     function getContentPointer(bytes32 ethscriptionId) external view returns (address) {
         EthscriptionStorage storage ethscription = _getEthscriptionOrRevert(ethscriptionId);
-        bytes32 stored = contentStorageBySha[ethscription.contentSha];
+        bytes32 stored = contentStorage[ethscription.contentHash];
 
         // Check if it's inline content using BytePackLib
         if (BytePackLib.isPacked(stored)) {

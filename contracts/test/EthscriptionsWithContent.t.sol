@@ -16,7 +16,7 @@ contract EthscriptionsWithContentTest is TestSetup {
         vm.prank(creator);
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: txHash,
-            contentUriHash: keccak256(bytes("data:text/plain,Hello, World!")),
+            contentUriSha: keccak256(bytes("data:text/plain,Hello, World!")),
             initialOwner: initialOwner,
             content: bytes(testContent),
             mimetype: "text/plain",
@@ -68,7 +68,7 @@ contract EthscriptionsWithContentTest is TestSetup {
         vm.prank(creator);
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: txHash,
-            contentUriHash: keccak256(bytes("data:text/plain,Test by token ID")),
+            contentUriSha: keccak256(bytes("data:text/plain,Test by token ID")),
             initialOwner: initialOwner,
             content: bytes(testContent),
             mimetype: "text/plain",
@@ -126,7 +126,7 @@ contract EthscriptionsWithContentTest is TestSetup {
         vm.prank(creator);
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: txHash,
-            contentUriHash: keccak256(bytes("data:application/octet-stream,<large content>")),
+            contentUriSha: keccak256(bytes("data:application/octet-stream,<large content>")),
             initialOwner: initialOwner,
             content: largeContent,
             mimetype: "application/octet-stream",
@@ -172,7 +172,7 @@ contract EthscriptionsWithContentTest is TestSetup {
         vm.prank(creator);
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
             ethscriptionId: txHash,
-            contentUriHash: keccak256(bytes("data:text/plain,HelloWorld")),
+            contentUriSha: keccak256(bytes("data:text/plain,HelloWorld")),
             initialOwner: initialOwner,
             content: smallContent,
             mimetype: "text/plain",

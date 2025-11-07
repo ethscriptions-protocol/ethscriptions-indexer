@@ -6,6 +6,7 @@ import "./Ethscriptions.sol";
 import "./libraries/Predeploys.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {Base64} from "solady/utils/Base64.sol";
+import {JSONParserLib} from "solady/utils/JSONParserLib.sol";
 import "./ERC721EthscriptionsCollectionManager.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -147,12 +148,16 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
         ERC721EthscriptionsCollectionManager.CollectionMetadata memory metadata =
             manager.getCollectionByAddress(address(this));
 
+        // Resolve URIs (handles esc://ethscriptions/{id}/data references)
+        string memory image = _resolveEthscriptionURI(metadata.logoImageUri);
+        string memory bannerImage = _resolveEthscriptionURI(metadata.bannerImageUri);
+
         // Build JSON with OpenSea fields
         string memory json = string.concat(
             '{"name":"', metadata.name.escapeJSON(),
             '","description":"', metadata.description.escapeJSON(),
-            '","image":"', metadata.logoImageUri.escapeJSON(),
-            '","banner_image":"', metadata.bannerImageUri.escapeJSON(),
+            '","image":"', image.escapeJSON(),
+            '","banner_image":"', bannerImage.escapeJSON(),
             '","external_link":"', metadata.websiteLink.escapeJSON(),
             '"}'
         );
@@ -182,5 +187,55 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
         override(ERC721EthscriptionsUpgradeable, IERC721)
     {
         revert TransferNotAllowed();
+    }
+
+    // -------------------- URI Resolution Helpers --------------------
+
+    /// @notice Resolve URI, handling esc://ethscriptions/{id}/data format
+    /// @dev Returns empty string if esc:// reference not found (doesn't revert)
+    /// @param uri The URI to resolve (can be regular URI, data URI, or esc:// reference)
+    /// @return The resolved URI (or empty string if esc:// reference not found)
+    function _resolveEthscriptionURI(string memory uri) private view returns (string memory) {
+        // Check if it's an ethscription reference
+        if (!uri.startsWith("esc://ethscriptions/")) {
+            return uri;  // Regular URI or data URI, pass through
+        }
+
+        // Format: esc://ethscriptions/0x{64 hex chars}/data
+        // Split by "/" to extract parts: ["esc:", "", "ethscriptions", "0x{id}", "data"]
+        string[] memory parts = uri.split("/");
+
+        if (parts.length != 5 || !parts[4].eq("data")) {
+            return "";  // Invalid format
+        }
+
+        // The ID should be at index 3 (after esc: / / ethscriptions /)
+        string memory hexId = parts[3];
+
+        // Validate hex ID format before parsing
+        if (bytes(hexId).length != 66) {
+            return "";  // Must be 0x + 64 hex chars
+        }
+
+        // Parse hex string to bytes32 using JSONParserLib (reverts on invalid)
+        bytes32 ethscriptionId;
+        try this._parseHexToBytes32(hexId) returns (bytes32 parsed) {
+            ethscriptionId = parsed;
+        } catch {
+            return "";  // Invalid hex format
+        }
+
+        // Try to get the ethscription's media URI
+        try ethscriptions.getMediaUri(ethscriptionId) returns (string memory, string memory mediaUri) {
+            return mediaUri;  // Return the data URI from the referenced ethscription
+        } catch {
+            return "";  // Ethscription doesn't exist, return empty (don't revert)
+        }
+    }
+
+    /// @notice Parse hex string to bytes32 (external for try/catch)
+    /// @dev Must be external to allow try/catch usage
+    function _parseHexToBytes32(string calldata hexStr) external pure returns (bytes32) {
+        return bytes32(JSONParserLib.parseUintFromHex(hexStr));
     }
 }

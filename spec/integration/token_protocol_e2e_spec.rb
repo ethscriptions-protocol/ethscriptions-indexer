@@ -258,9 +258,8 @@ RSpec.describe "Token Protocol End-to-End", type: :integration do
       expect(result[:protocol_success]).to eq(false), "Protocol should not execute"
     end
 
-    it "handles token format with spaces via generic extractor" do
-      # Extra whitespace breaks exact format requirement for TokenParamsExtractor
-      # But GenericProtocolExtractor will parse it as valid JSON and it may succeed
+    it "rejects token format with unexpected whitespace" do
+      # Extra whitespace breaks exact format requirement for the token parser
       invalid_json = '{"p": "erc-20", "op": "deploy", "tick": "spaced", "max": "1000", "lim": "100"}'
 
       result = create_and_validate_ethscription(
@@ -270,11 +269,7 @@ RSpec.describe "Token Protocol End-to-End", type: :integration do
       )
 
       expect(result[:success]).to eq(true), "Ethscription should be created"
-      # Protocol is extracted by GenericProtocolExtractor
-      expect(result[:protocol_extracted]).to eq(true), "Protocol should be extracted by generic extractor"
-      # The generic extractor correctly encodes the data for ERC20FixedDenominationManager
-      # so it might actually succeed
-      # Just verify the ethscription was created successfully
+      expect(result[:protocol_extracted]).to eq(false), "Protocol should not be extracted"
     end
   end
 
@@ -312,7 +307,7 @@ RSpec.describe "Token Protocol End-to-End", type: :integration do
 
     # Check if protocol was extracted
     begin
-      protocol, operation, encoded_data = ProtocolExtractor.for_calldata(data_uri)
+      protocol, operation, encoded_data = ProtocolParser.for_calldata(data_uri)
       protocol_results[:protocol_extracted] = protocol.present? && operation.present?
     rescue => e
       protocol_results[:protocol_error] = e.message

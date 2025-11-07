@@ -42,4 +42,42 @@ class Erc20FixedDenominationParser
     # No match - return default
     DEFAULT_PARAMS
   end
+
+  # Returns a hash representation of params that downstream services expect.
+  def self.structured_params(params)
+    op, _protocol, tick, val1, val2, val3 = params
+
+    case op
+    when 'deploy'.b
+      {
+        op: op,
+        tick: tick,
+        max: val1,
+        lim: val2,
+        amt: 0
+      }
+    when 'mint'.b
+      {
+        op: op,
+        tick: tick,
+        id: val1,
+        amt: val3
+      }
+    else
+      nil
+    end
+  end
+
+  # Encodes params into the ABI tuple required by the manager contract.
+  def self.encode_calldata(params)
+    op, _protocol, tick, val1, val2, val3 = params
+
+    if op == 'deploy'.b
+      Eth::Abi.encode(['(string,uint256,uint256)'], [[tick.b, val1, val2]])
+    elsif op == 'mint'.b
+      Eth::Abi.encode(['(string,uint256,uint256)'], [[tick.b, val1, val3]])
+    else
+      ''.b
+    end
+  end
 end

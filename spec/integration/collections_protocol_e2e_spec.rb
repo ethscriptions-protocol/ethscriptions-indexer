@@ -6,6 +6,7 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
   let(:alice) { valid_address("alice") }
   let(:bob) { valid_address("bob") }
   let(:dummy_recipient) { valid_address("recipient") }
+  let(:zero_merkle_root) { '0x' + '0' * 64 }
 
   # Helper method to create and validate ethscriptions using the same pattern as the first test
   def create_and_validate_ethscription(creator:, to:, data_uri:)
@@ -28,7 +29,7 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
     operation = nil
 
     begin
-      protocol, operation, _encoded_data = ProtocolExtractor.for_calldata(data_uri)
+      protocol, operation, _encoded_data = ProtocolParser.for_calldata(data_uri)
       protocol_extracted = protocol.present? && operation.present?
     rescue => e
       # Protocol extraction failed
@@ -91,7 +92,8 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
         "background_color" => "",
         "website_link" => "",
         "twitter_link" => "",
-        "discord_link" => ""
+        "discord_link" => "",
+        "merkle_root" => zero_merkle_root
       }
 
       tx_spec = create_input(
@@ -112,13 +114,17 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
 
       # Validate ethscription content stored correctly
       stored = get_ethscription_content(collection_id)
+      json_str = stored[:content]
+      json_str = json_str.sub(/\Adata:,/, '') if json_str.start_with?('data:,')
+      parsed = begin
+        JSON.parse(json_str)
+      rescue JSON::ParserError
+        raise RSpec::Expectations::ExpectationNotMetError, "Stored content not valid JSON: #{json_str.inspect}"
+      end
 
-      # The content might be in binary format
-      content_str = stored[:content].is_a?(String) ? stored[:content] : stored[:content].force_encoding('UTF-8')
-
-      expect(content_str).to include('"p":"erc-721-ethscriptions-collection"')
-      expect(content_str).to include('"op":"create_collection"')
-      expect(content_str).to include('"name":"Test NFT"')
+      expect(parsed['p']).to eq('erc-721-ethscriptions-collection')
+      expect(parsed['op']).to eq('create_collection')
+      expect(parsed['name']).to eq('Test NFT')
 
       # Parse events to check protocol execution
       if results[:l2_receipts].first[:logs].any?
@@ -171,7 +177,8 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
         "background_color" => "",
         "website_link" => "",
         "twitter_link" => "",
-        "discord_link" => ""
+        "discord_link" => "",
+        "merkle_root" => zero_merkle_root
       }
 
       # Create collection using the same pattern as the first test

@@ -2,6 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Erc721EthscriptionsCollectionParser do
   describe 'ID-aware import fallback and normal add flow' do
+    let(:zero_merkle_root) { '0x' + '0' * 64 }
     let(:leader_id) { '0x' + '1' * 64 }
     let(:member_id) { '0x' + '2' * 64 }
 
@@ -15,9 +16,10 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
           'banner_image_uri' => '',
           'website_link' => 'https://example.com',
           'twitter_link' => '',
-          'discord_link' => '',
-          'background_color' => '#FFFFFF',
-          'total_supply' => 2
+        'discord_link' => '',
+        'background_color' => '#FFFFFF',
+        'total_supply' => 2,
+        'merkle_root' => zero_merkle_root
         }
       }
     end
@@ -219,4 +221,3 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
     end
   end
 end
-

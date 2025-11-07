@@ -1,4 +1,4 @@
-# Strict extractor for the ERC-721 Ethscriptions collection protocol with canonical JSON validation
+# Strict parser for the ERC-721 Ethscriptions collection protocol with canonical JSON validation
 class Erc721EthscriptionsCollectionParser
   # Default return for invalid input
   DEFAULT_PARAMS = [''.b, ''.b, ''.b].freeze
@@ -9,8 +9,7 @@ class Erc721EthscriptionsCollectionParser
   # Operation schemas defining exact structure and ABI encoding
   OPERATION_SCHEMAS = {
     'create_collection' => {
-      keys: %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link],
-      # Contract expects an extra bytes32 merkleRoot at the end. We append zero when omitted.
+      keys: %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link merkle_root],
       abi_type: '(string,string,uint256,string,string,string,string,string,string,string,bytes32)',
       validators: {
         'name' => :string,
@@ -22,13 +21,14 @@ class Erc721EthscriptionsCollectionParser
         'background_color' => :string,
         'website_link' => :string,
         'twitter_link' => :string,
-        'discord_link' => :string
+        'discord_link' => :string,
+        'merkle_root' => :bytes32
       }
     },
     # New combined create op name used by the contract; keep legacy alias below
     'create_collection_and_add_self' => {
       keys: %w[metadata item],
-      # ((CollectionParams),(ItemData)) - ItemData without ethscription_id (item refers to itself)
+      # ((CollectionParams),(ItemData)) - ItemData mirrors ItemData struct (no ethscriptionId field)
       abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'metadata' => :collection_metadata,
@@ -62,8 +62,7 @@ class Erc721EthscriptionsCollectionParser
       }
     },
     'edit_collection' => {
-      keys: %w[collection_id description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link],
-      # Contract includes a bytes32 merkleRoot; append zero when omitted
+      keys: %w[collection_id description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link merkle_root],
       abi_type: '(bytes32,string,string,string,string,string,string,string,bytes32)',
       validators: {
         'collection_id' => :bytes32,
@@ -73,7 +72,8 @@ class Erc721EthscriptionsCollectionParser
         'background_color' => :string,
         'website_link' => :string,
         'twitter_link' => :string,
-        'discord_link' => :string
+        'discord_link' => :string,
+        'merkle_root' => :bytes32
       }
     },
     'edit_collection_item' => {
@@ -97,8 +97,10 @@ class Erc721EthscriptionsCollectionParser
     }
   }.freeze
 
-  # Item keys for validation (ethscription_id removed - item refers to itself)
-  # merkle_proof is always required (can be empty array)
+  ZERO_BYTES32 = ["".ljust(64, '0')].pack('H*').freeze
+  ZERO_HEX_BYTES32 = '0x' + '0' * 64
+
+  # Item keys for validation (merkle_proof always present, can be empty array)
   ITEM_KEYS = %w[item_index name background_color description attributes merkle_proof].freeze
 
   # Attribute keys for NFT metadata
@@ -114,53 +116,47 @@ class Erc721EthscriptionsCollectionParser
   end
 
   def extract(content_uri, ethscription_id: nil)
-    # Import-aware path takes precedence if id is provided
     if ethscription_id
-      if (encoded = build_import_encoded_params(ethscription_id.to_hex))
-        return encoded
+      normalized_id = normalize_id(ethscription_id)
+      if normalized_id && (preplanned = build_import_encoded_params(normalized_id))
+        return preplanned
       end
     end
 
     return DEFAULT_PARAMS unless valid_data_uri?(content_uri)
 
     begin
-      # Parse JSON (preserves key order)
-      # Use DataUri to correctly handle optional parameters like ESIP6
-      json_str = if content_uri.start_with?("data:,{")
-        content_uri.sub(/\Adata:,/, '')
-      else
-        DataUri.new(content_uri).decoded_data
-      end
-      
+      json_str = DataUri.new(content_uri).decoded_data
+
       # TODO: make sure this is safe
       data = JSON.parse(json_str)
-
-      # Must be an object
       return DEFAULT_PARAMS unless data.is_a?(Hash)
-
-      # Check protocol
       return DEFAULT_PARAMS unless data['p'] == 'erc-721-ethscriptions-collection'
 
-      # Get operation
       operation = data['op']
       return DEFAULT_PARAMS unless OPERATION_SCHEMAS.key?(operation)
 
-      # Validate exact key order (including p and op at start)
       schema = OPERATION_SCHEMAS[operation]
       expected_keys = ['p', 'op'] + schema[:keys]
       return DEFAULT_PARAMS unless data.keys == expected_keys
 
-      # Remove protocol fields for encoding
       encoding_data = data.reject { |k, _| k == 'p' || k == 'op' }
-      
-      # Validate field types and encode
       encoded_data = encode_operation(operation, encoding_data, schema)
-
       ['erc-721-ethscriptions-collection'.b, operation.b, encoded_data.b]
-
     rescue JSON::ParserError, ValidationError => e
       Rails.logger.debug "Collections extraction failed: #{e.message}" if defined?(Rails)
       DEFAULT_PARAMS
+    end
+  end
+
+  def normalize_id(value)
+    case value
+    when ByteString
+      value.to_hex.downcase
+    when String
+      value.downcase
+    else
+      nil
     end
   end
 
@@ -185,13 +181,16 @@ class Erc721EthscriptionsCollectionParser
     item_index = data[:zero_index_by_id][id] || 0
 
     if id == leader_id
-      metadata = data[:collections_by_name][coll_name]
-      return nil unless metadata
+      raw_metadata = data[:collections_by_name][coll_name]
+      return nil unless raw_metadata
+      metadata = raw_metadata.merge(
+        'merkle_root' => raw_metadata['merkle_root'] || ZERO_HEX_BYTES32
+      )
       operation = 'create_collection_and_add_self'
       schema = OPERATION_SCHEMAS[operation]
       encoding_data = {
         'metadata' => build_metadata_object(metadata),
-        'item' => build_item_object(item: item, item_id: id, item_index: item_index)
+        'item' => build_item_object(item: item, item_index: item_index)
       }
       encoded_data = encode_operation(operation, encoding_data, schema)
       ['erc-721-ethscriptions-collection'.b, operation.b, encoded_data.b]
@@ -200,7 +199,7 @@ class Erc721EthscriptionsCollectionParser
       schema = OPERATION_SCHEMAS[operation]
       encoding_data = {
         'collection_id' => to_bytes32_hex(leader_id),
-        'item' => build_item_object(item: item, item_id: id, item_index: item_index)
+        'item' => build_item_object(item: item, item_index: item_index)
       }
       encoded_data = encode_operation(operation, encoding_data, schema)
       ['erc-721-ethscriptions-collection'.b, operation.b, encoded_data.b]
@@ -269,7 +268,7 @@ class Erc721EthscriptionsCollectionParser
     twitter_link = safe_string(meta['twitter_link'])
     discord_link = safe_string(meta['discord_link'])
 
-    OrderedHash[
+    result = OrderedHash[
       'name', name,
       'symbol', symbol,
       'max_supply', max_supply,
@@ -281,12 +280,17 @@ class Erc721EthscriptionsCollectionParser
       'twitter_link', twitter_link,
       'discord_link', discord_link
     ]
+    merkle_root = meta.fetch('merkle_root')
+    result['merkle_root'] = to_bytes32_hex(merkle_root)
+    result
   end
 
-  def build_item_object(item:, item_id:, item_index:)
+  def build_item_object(item:, item_index:)
     attrs = Array(item['attributes']).map do |a|
       OrderedHash['trait_type', safe_string(a['trait_type']), 'value', safe_string(a['value'])]
     end
+
+    proofs = item.key?('merkle_proof') ? Array(item['merkle_proof']) : []
 
     OrderedHash[
       'item_index', safe_uint_string(item_index),
@@ -294,7 +298,7 @@ class Erc721EthscriptionsCollectionParser
       'background_color', safe_string(item['background_color']),
       'description', safe_string(item['description']),
       'attributes', attrs,
-      'merkle_proof', []
+      'merkle_proof', proofs
     ]
   end
 
@@ -479,8 +483,8 @@ class Erc721EthscriptionsCollectionParser
       raise ValidationError, "Expected object for #{field_name}"
     end
     # Expected keys for metadata (merkle_root optional)
-    expected_min_keys = %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link]
-    unless value.keys == expected_min_keys || value.keys == (expected_min_keys + ['merkle_root'])
+    expected_keys = %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link merkle_root]
+    unless value.keys == expected_keys
       raise ValidationError, "Invalid metadata keys or order"
     end
 
@@ -495,7 +499,7 @@ class Erc721EthscriptionsCollectionParser
       websiteLink: validate_string(value['website_link'], 'website_link'),
       twitterLink: validate_string(value['twitter_link'], 'twitter_link'),
       discordLink: validate_string(value['discord_link'], 'discord_link'),
-      merkleRoot: value.key?('merkle_root') ? validate_bytes32(value['merkle_root'], 'merkle_root') : nil
+      merkleRoot: validate_bytes32(value['merkle_root'], 'merkle_root')
     }
   end
 
@@ -504,13 +508,11 @@ class Erc721EthscriptionsCollectionParser
       raise ValidationError, "Item must be an object"
     end
 
-    # Check exact key order - merkle_proof is always required
     unless item.keys == ITEM_KEYS
       expected = "[#{ITEM_KEYS.join(', ')}]"
       raise ValidationError, "Invalid item keys or order. Expected: #{expected}, got: [#{item.keys.join(', ')}]"
     end
 
-    # Validate each field - return in internal format for encoding
     {
       itemIndex: validate_uint256(item['item_index'], 'item_index'),
       name: validate_string(item['name'], 'name'),
@@ -562,8 +564,7 @@ class Erc721EthscriptionsCollectionParser
       data['website_link'],
       data['twitter_link'],
       data['discord_link'],
-      # Append zero merkle root to satisfy contract struct shape
-      ["".ljust(64, '0')].pack('H*')
+      data['merkle_root']
     ]
   end
 
@@ -612,22 +613,6 @@ class Erc721EthscriptionsCollectionParser
     [data['collection_id'], item_tuple]
   end
 
-  def build_add_items_batch_values(data)
-    # Transform items to array format for encoding
-    items_array = data['items'].map do |item|
-      [
-        item[:itemIndex],
-        item[:name],
-        item[:backgroundColor],
-        item[:description],
-        item[:attributes],
-        item[:merkleProof]
-      ]
-    end
-
-    [data['collection_id'], items_array]
-  end
-
   def build_remove_items_values(data)
     [data['collection_id'], data['ethscription_ids']]
   end
@@ -644,8 +629,7 @@ class Erc721EthscriptionsCollectionParser
       data['discord_link']
     ]
 
-    # Append zero merkle root if not provided in payload (parser schema omits it)
-    values << ["".ljust(64, '0')].pack('H*')
+    values << data['merkle_root']
     values
   end
 

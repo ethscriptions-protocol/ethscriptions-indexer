@@ -21,6 +21,9 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
     /// @notice Manager contract that deployed and controls this collection
     ERC721EthscriptionsCollectionManager public manager;
 
+    /// @notice Collection ID stored locally to avoid callback to manager
+    bytes32 public collectionId;
+
     // Events
     event MemberAdded(bytes32 indexed ethscriptionId, uint256 indexed tokenId);
     event MemberRemoved(bytes32 indexed ethscriptionId, uint256 indexed tokenId);
@@ -38,23 +41,28 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
     function initialize(
         string memory name_,
         string memory symbol_,
-        address initialOwner_
+        address initialOwner_,
+        bytes32 collectionId_
     ) external initializer {
         __ERC721_init(name_, symbol_);
         __Ownable_init(initialOwner_);
         manager = ERC721EthscriptionsCollectionManager(msg.sender);
-    }
-
-    /// @notice Lookup collection id via the manager registry
-    function collectionId() public view returns (bytes32) {
-        bytes32 id = manager.collectionIdForAddress(address(this));
-        if (id == bytes32(0)) revert UnknownCollection();
-        return id;
+        collectionId = collectionId_;
     }
 
     function addMember(bytes32 ethscriptionId, uint256 tokenId) external onlyFactory {
         address owner = ethscriptions.ownerOf(ethscriptionId);
-        _mint(owner, tokenId);
+
+        // Handle minting to address(0) - mint to creator first then transfer
+        if (owner == address(0)) {
+            Ethscriptions.Ethscription memory ethscription = ethscriptions.getEthscription(ethscriptionId, false);
+            address creator = ethscription.creator;
+            _mint(creator, tokenId);
+            _transfer(creator, address(0), tokenId);
+        } else {
+            _mint(owner, tokenId);
+        }
+
         emit MemberAdded(ethscriptionId, tokenId);
     }
 
@@ -90,7 +98,7 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
         if (!_tokenExists(tokenId)) revert("Token does not exist");
 
         ERC721EthscriptionsCollectionManager.CollectionItem memory item =
-            manager.getCollectionItem(collectionId(), tokenId);
+            manager.getCollectionItem(collectionId, tokenId);
         if (item.ethscriptionId == bytes32(0)) revert("Token not in collection");
 
         (string memory mediaType, string memory mediaUri) = ethscriptions.getMediaUri(item.ethscriptionId);

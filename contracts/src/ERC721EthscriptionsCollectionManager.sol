@@ -76,6 +76,7 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     }
 
     struct ItemData {
+        bytes32 contentHash;    // keccak256 of ethscription content (known ahead of time)
         uint256 itemIndex;
         string name;
         string backgroundColor;
@@ -347,7 +348,8 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
             ERC721EthscriptionsCollection.initialize.selector,
             metadata.name,
             metadata.symbol,
-            ethscriptions.ownerOf(collectionId)
+            ethscriptions.ownerOf(collectionId),
+            collectionId
         ));
         
         collectionProxy.changeAdmin(Predeploys.PROXY_ADMIN);
@@ -390,12 +392,14 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         bytes32 ethscriptionId,
         ItemData memory item
     ) internal {
-        
         CollectionRecord storage collection = collectionStore[collectionId];
+        Ethscriptions.Ethscription memory ethscription = ethscriptions.getEthscription(ethscriptionId, false);
+        
+        require(ethscription.contentHash == item.contentHash, "Content hash mismatch");
         require(collection.collectionContract != address(0), "Collection does not exist");
         require(!collection.locked, "Collection is locked");
 
-        address sender = _getEthscriptionCreator(ethscriptionId);
+        address sender = ethscription.creator;
 
         ERC721EthscriptionsCollection collectionContract =
             ERC721EthscriptionsCollection(collection.collectionContract);
@@ -452,7 +456,18 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
 
     function _verifyItemMerkleProof(ItemData memory item, bytes32 merkleRoot) private pure {
         require(merkleRoot != bytes32(0), "Merkle proof required");
-        bytes32 leaf = keccak256(abi.encode(item));
+
+        // Compute leaf from item data (excluding merkleProof itself)
+        // Includes contentHash to ensure the ethscription content matches what was specified
+        bytes32 leaf = keccak256(abi.encode(
+            item.contentHash,
+            item.itemIndex,
+            item.name,
+            item.backgroundColor,
+            item.description,
+            item.attributes
+        ));
+
         require(MerkleProof.verify(item.merkleProof, merkleRoot, leaf), "Invalid Merkle proof");
     }
     

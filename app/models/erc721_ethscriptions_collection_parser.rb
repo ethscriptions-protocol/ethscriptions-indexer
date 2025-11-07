@@ -28,8 +28,8 @@ class Erc721EthscriptionsCollectionParser
     # New combined create op name used by the contract; keep legacy alias below
     'create_collection_and_add_self' => {
       keys: %w[metadata item],
-      # ((CollectionParams),(ItemData)) - ItemData mirrors ItemData struct (no ethscriptionId field)
-      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,string,string,(string,string)[],bytes32[]))',
+      # ((CollectionParams),(ItemData)) - ItemData now includes contentHash as first field
+      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'metadata' => :collection_metadata,
         'item' => :single_item
@@ -38,7 +38,7 @@ class Erc721EthscriptionsCollectionParser
     # Legacy alias retained for backwards compatibility
     'create_and_add_self' => {
       keys: %w[metadata item],
-      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,string,string,(string,string)[],bytes32[]))',
+      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'metadata' => :collection_metadata,
         'item' => :single_item
@@ -47,7 +47,7 @@ class Erc721EthscriptionsCollectionParser
     # New single-item add op; keep legacy batch below for compatibility
     'add_self_to_collection' => {
       keys: %w[collection_id item],
-      abi_type: '(bytes32,(uint256,string,string,string,(string,string)[],bytes32[]))',
+      abi_type: '(bytes32,(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'collection_id' => :bytes32,
         'item' => :single_item
@@ -101,7 +101,7 @@ class Erc721EthscriptionsCollectionParser
   ZERO_HEX_BYTES32 = '0x' + '0' * 64
 
   # Item keys for validation (merkle_proof always present, can be empty array)
-  ITEM_KEYS = %w[item_index name background_color description attributes merkle_proof].freeze
+  ITEM_KEYS = %w[content_hash item_index name background_color description attributes merkle_proof].freeze
 
   # Attribute keys for NFT metadata
   ATTRIBUTE_KEYS = %w[trait_type value].freeze
@@ -111,43 +111,78 @@ class Erc721EthscriptionsCollectionParser
   DEFAULT_ITEMS_PATH = ENV['COLLECTIONS_ITEMS_PATH'] || Rails.root.join('items_by_ethscription.json')
   DEFAULT_COLLECTIONS_PATH = ENV['COLLECTIONS_META_PATH'] || Rails.root.join('collections_by_name.json')
 
-  def self.extract(content_uri, ethscription_id: nil)
-    new.extract(content_uri, ethscription_id: ethscription_id)
+  # New API: validate and encode protocol params
+  # Unified interface - accepts all possible parameters, uses what it needs
+  def self.validate_and_encode(decoded_content:, operation:, params:, source:, ethscription_id: nil, **_extras)
+    new.validate_and_encode(
+      decoded_content: decoded_content,
+      operation: operation,
+      params: params,
+      source: source,
+      ethscription_id: ethscription_id
+    )
   end
 
-  def extract(content_uri, ethscription_id: nil)
+  def validate_and_encode(decoded_content:, operation:, params:, source:, ethscription_id: nil)
+    # Check import fallback first (if ethscription_id provided)
     if ethscription_id
       normalized_id = normalize_id(ethscription_id)
-      if normalized_id && (preplanned = build_import_encoded_params(normalized_id))
+      if normalized_id && (preplanned = build_import_encoded_params(normalized_id, decoded_content))
         return preplanned
       end
     end
 
-    return DEFAULT_PARAMS unless valid_data_uri?(content_uri)
+    return DEFAULT_PARAMS unless OPERATION_SCHEMAS.key?(operation)
+
+    schema = OPERATION_SCHEMAS[operation]
 
     begin
-      json_str = DataUri.new(content_uri).decoded_data
+      if source == :json
+        # Strict JSON validation - enforce exact key order
+        validate_json_structure(params, operation, schema)
+      end
 
-      # TODO: make sure this is safe
-      data = JSON.parse(json_str)
-      return DEFAULT_PARAMS unless data.is_a?(Hash)
-      return DEFAULT_PARAMS unless data['p'] == 'erc-721-ethscriptions-collection'
+      # Extract encoding data (skip 'p' and 'op' for JSON source)
+      encoding_data = if source == :json
+                        params.reject { |k, _| k == 'p' || k == 'op' }
+                      else
+                        params
+                      end
 
-      operation = data['op']
-      return DEFAULT_PARAMS unless OPERATION_SCHEMAS.key?(operation)
+      # Compute content hash ONLY for operations that need it
+      content_hash = nil
+      if ['create_collection_and_add_self', 'create_and_add_self', 'add_self_to_collection'].include?(operation)
+        # Calculate keccak256 of decoded content for item verification
+        hash = Eth::Util.keccak256(decoded_content).unpack1('H*')
+        content_hash = '0x' + hash
 
-      schema = OPERATION_SCHEMAS[operation]
-      expected_keys = ['p', 'op'] + schema[:keys]
-      return DEFAULT_PARAMS unless data.keys == expected_keys
+        # Inject content_hash into item data
+        item_data = encoding_data['item']
+        if item_data.is_a?(Hash)
+          # Add content_hash as first key (OrderedHash maintains insertion order)
+          encoding_data['item'] = self.class::OrderedHash['content_hash', content_hash].merge(item_data)
+        end
+      end
 
-      encoding_data = data.reject { |k, _| k == 'p' || k == 'op' }
-      encoded_data = encode_operation(operation, encoding_data, schema)
+      encoded_data = encode_operation(operation, encoding_data, schema, content_hash: content_hash)
       ['erc-721-ethscriptions-collection'.b, operation.b, encoded_data.b]
     rescue JSON::ParserError, ValidationError => e
-      Rails.logger.debug "Collections extraction failed: #{e.message}" if defined?(Rails)
+      Rails.logger.debug "Collections validation failed: #{e.message}" if defined?(Rails)
       DEFAULT_PARAMS
     end
   end
+
+  def validate_json_structure(params, operation, schema)
+    # For JSON source, enforce strict key ordering
+    expected_keys = ['p', 'op'] + schema[:keys]
+    unless params.keys == expected_keys
+      raise ValidationError, "Invalid key order for #{operation}"
+    end
+  end
+
+  # Removed extract() method - use ProtocolParser.for_calldata() instead
+  # This avoids circular dependencies and keeps the architecture cleaner
+  # The import fallback logic is now handled in validate_and_encode()
 
   def normalize_id(value)
     case value
@@ -163,7 +198,7 @@ class Erc721EthscriptionsCollectionParser
   # -------------------- Import fallback --------------------
 
   # Returns [protocol, operation, encoded_data] or nil
-  def build_import_encoded_params(id)
+  def build_import_encoded_params(id, decoded_content)
     data = self.class.load_import_data(
       items_path: DEFAULT_ITEMS_PATH,
       collections_path: DEFAULT_COLLECTIONS_PATH
@@ -180,6 +215,10 @@ class Erc721EthscriptionsCollectionParser
 
     item_index = data[:zero_index_by_id][id] || 0
 
+    # Always compute content hash from the actual decoded content
+    hash = Eth::Util.keccak256(decoded_content || ''.b).unpack1('H*')
+    content_hash = '0x' + hash
+
     if id == leader_id
       raw_metadata = data[:collections_by_name][coll_name]
       return nil unless raw_metadata
@@ -190,18 +229,18 @@ class Erc721EthscriptionsCollectionParser
       schema = OPERATION_SCHEMAS[operation]
       encoding_data = {
         'metadata' => build_metadata_object(metadata),
-        'item' => build_item_object(item: item, item_index: item_index)
+        'item' => build_item_object(item: item, item_index: item_index, content_hash: content_hash)
       }
-      encoded_data = encode_operation(operation, encoding_data, schema)
+      encoded_data = encode_operation(operation, encoding_data, schema, content_hash: content_hash)
       ['erc-721-ethscriptions-collection'.b, operation.b, encoded_data.b]
     else
       operation = 'add_self_to_collection'
       schema = OPERATION_SCHEMAS[operation]
       encoding_data = {
         'collection_id' => to_bytes32_hex(leader_id),
-        'item' => build_item_object(item: item, item_index: item_index)
+        'item' => build_item_object(item: item, item_index: item_index, content_hash: content_hash)
       }
-      encoded_data = encode_operation(operation, encoding_data, schema)
+      encoded_data = encode_operation(operation, encoding_data, schema, content_hash: content_hash)
       ['erc-721-ethscriptions-collection'.b, operation.b, encoded_data.b]
     end
   end
@@ -285,7 +324,7 @@ class Erc721EthscriptionsCollectionParser
     result
   end
 
-  def build_item_object(item:, item_index:)
+  def build_item_object(item:, item_index:, content_hash:)
     attrs = Array(item['attributes']).map do |a|
       OrderedHash['trait_type', safe_string(a['trait_type']), 'value', safe_string(a['value'])]
     end
@@ -293,6 +332,7 @@ class Erc721EthscriptionsCollectionParser
     proofs = item.key?('merkle_proof') ? Array(item['merkle_proof']) : []
 
     OrderedHash[
+      'content_hash', content_hash,
       'item_index', safe_uint_string(item_index),
       'name', safe_string(item['name']),
       'background_color', safe_string(item['background_color']),
@@ -347,7 +387,7 @@ class Erc721EthscriptionsCollectionParser
     DataUri.valid?(uri)
   end
 
-  def encode_operation(operation, data, schema)
+  def encode_operation(operation, data, schema, content_hash: nil)
     # Validate and transform fields according to schema
     validated_data = validate_fields(data, schema[:validators])
 
@@ -356,9 +396,9 @@ class Erc721EthscriptionsCollectionParser
     when 'create_collection'
       build_create_collection_values(validated_data)
     when 'create_collection_and_add_self', 'create_and_add_self'
-      build_create_and_add_self_values(validated_data)
+      build_create_and_add_self_values(validated_data, content_hash: content_hash)
     when 'add_self_to_collection'
-      build_add_self_to_collection_values(validated_data)
+      build_add_self_to_collection_values(validated_data, content_hash: content_hash)
     when 'remove_items'
       build_remove_items_values(validated_data)
     when 'edit_collection'
@@ -514,6 +554,7 @@ class Erc721EthscriptionsCollectionParser
     end
 
     {
+      contentHash: validate_bytes32(item['content_hash'], 'content_hash'),
       itemIndex: validate_uint256(item['item_index'], 'item_index'),
       name: validate_string(item['name'], 'name'),
       backgroundColor: validate_string(item['background_color'], 'background_color'),
@@ -568,7 +609,7 @@ class Erc721EthscriptionsCollectionParser
     ]
   end
 
-  def build_create_and_add_self_values(data)
+  def build_create_and_add_self_values(data, content_hash:)
     meta = data['metadata']
     item = data['item']
 
@@ -588,7 +629,17 @@ class Erc721EthscriptionsCollectionParser
       merkle_root
     ]
 
+    # Item tuple - contentHash comes first (keccak256 of ethscription content)
+    # Always use the computed content_hash if provided, otherwise use validated item contentHash
+    content_hash_bytes = if content_hash
+      [content_hash[2..]].pack('H*')
+    elsif item[:contentHash]
+      item[:contentHash]  # Already packed bytes from validate_item
+    else
+      raise ValidationError, "Content hash missing"
+    end
     item_tuple = [
+      content_hash_bytes,  # Already packed bytes, don't call to_bytes32_hex
       item[:itemIndex],
       item[:name],
       item[:backgroundColor],
@@ -600,9 +651,20 @@ class Erc721EthscriptionsCollectionParser
     [metadata_tuple, item_tuple]
   end
 
-  def build_add_self_to_collection_values(data)
+  def build_add_self_to_collection_values(data, content_hash:)
     item = data['item']
+
+    # Item tuple - contentHash comes first (keccak256 of ethscription content)
+    # Always use the computed content_hash if provided, otherwise use validated item contentHash
+    content_hash_bytes = if content_hash
+      [content_hash[2..]].pack('H*')
+    elsif item[:contentHash]
+      item[:contentHash]  # Already packed bytes from validate_item
+    else
+      raise ValidationError, "Content hash missing"
+    end
     item_tuple = [
+      content_hash_bytes,  # Already packed bytes, don't call to_bytes32_hex
       item[:itemIndex],
       item[:name],
       item[:backgroundColor],

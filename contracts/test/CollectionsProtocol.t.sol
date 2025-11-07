@@ -58,7 +58,7 @@ contract CollectionsProtocolTest is TestSetup {
         bytes32 collectionId = txHash;
 
         // Use the getter functions instead of direct mapping access
-        ERC721EthscriptionsCollectionManager.CollectionRecord memory collection = collectionsHandler.getCollection(collectionId);
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory collection = collectionsHandler.getCollection(collectionId);
         assertNotEq(collection.collectionContract, address(0), "Collection contract should be deployed");
         assertEq(collection.locked, false, "Should not be locked");
 
@@ -66,7 +66,7 @@ contract CollectionsProtocolTest is TestSetup {
         assertEq(collectionContract.totalSupply(), 0, "Initial size should be 0");
 
         // Verify metadata
-        ERC721EthscriptionsCollectionManager.CollectionRecord memory stored = collectionsHandler.getCollection(collectionId);
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory stored = collectionsHandler.getCollection(collectionId);
         assertEq(stored.name, "Test Collection", "Name should match");
         assertEq(stored.symbol, "TEST", "Symbol should match");
         assertEq(stored.maxSupply, 100, "Max supply should match");
@@ -121,7 +121,7 @@ contract CollectionsProtocolTest is TestSetup {
         bytes32 collectionId = txHash;
 
         // Read back the state
-        ERC721EthscriptionsCollectionManager.CollectionRecord memory collection = collectionsHandler.getCollection(collectionId);
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory collection = collectionsHandler.getCollection(collectionId);
 
         console.log("Collection exists:", collection.collectionContract != address(0));
         console.log("Collection contract:", collection.collectionContract);
@@ -134,7 +134,7 @@ contract CollectionsProtocolTest is TestSetup {
         assertEq(collectionContract.totalSupply(), 0);
 
         // Read metadata
-        ERC721EthscriptionsCollectionManager.CollectionRecord memory stored = collectionsHandler.getCollection(collectionId);
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory stored = collectionsHandler.getCollection(collectionId);
         assertEq(stored.name, "Test NFTs");
         assertEq(stored.symbol, "TEST");
         assertEq(stored.maxSupply, 100);
@@ -200,7 +200,7 @@ contract CollectionsProtocolTest is TestSetup {
         console.logBytes(result);
 
         // Decode the result
-        ERC721EthscriptionsCollectionManager.CollectionRecord memory collection = abi.decode(result, (ERC721EthscriptionsCollectionManager.CollectionRecord));
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory collection = abi.decode(result, (ERC721EthscriptionsCollectionManager.CollectionMetadata));
 
         assertTrue(collection.collectionContract != address(0), "Should have collection contract");
         assertEq(collection.locked, false);

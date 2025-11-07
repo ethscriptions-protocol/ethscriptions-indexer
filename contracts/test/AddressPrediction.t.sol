@@ -85,7 +85,7 @@ contract AddressPredictionTest is TestSetup {
         collectionsHandler.op_create_collection(collectionId, abi.encode(metadata));
 
         // Assert deployed matches predicted
-        ERC721EthscriptionsCollectionManager.CollectionRecord memory collection =
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory collection =
             collectionsHandler.getCollection(collectionId);
         address actual = collection.collectionContract;
         assertEq(actual, predicted, "Predicted collection address should match actual deployed proxy");

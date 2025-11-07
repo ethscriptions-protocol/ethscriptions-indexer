@@ -126,10 +126,10 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     mapping(bytes32 => EthscriptionStorage) internal ethscriptions;
 
     /// @dev Content hash (keccak256) => packed content (for <32 bytes) or SSTORE2 pointer (for >=32 bytes)
-    mapping(bytes32 => bytes32) public contentStorage;
+    mapping(bytes32 => bytes32) internal contentStorage;
 
     /// @dev Metadata blob hash (keccak256) => packed metadata or SSTORE2 pointer (for deduplicated metadata storage)
-    mapping(bytes32 => bytes32) public metadataStorage;
+    mapping(bytes32 => bytes32) internal metadataStorage;
 
     /// @dev Content URI hash => first ethscription tx hash that used it (for protocol uniqueness check)
     /// @dev bytes32(0) means unused, non-zero means the content URI has been used

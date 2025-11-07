@@ -3,13 +3,17 @@ pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/Create2.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import {LibString} from "solady/utils/LibString.sol";
 import "./ERC721EthscriptionsCollection.sol";
 import "./libraries/Proxy.sol";
+import "./libraries/DedupedBlobStore.sol";
 import "./Ethscriptions.sol";
 import "./libraries/Predeploys.sol";
 import "./interfaces/IProtocolHandler.sol";
 
 contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
+    using LibString for *;
+
     struct Attribute {
         string traitType;
         string value;
@@ -30,6 +34,23 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     }
 
     struct CollectionRecord {
+        address collectionContract;
+        bool locked;
+        bytes32 nameRef;                // DedupedBlobStore reference
+        bytes32 symbolRef;              // DedupedBlobStore reference
+        uint256 maxSupply;
+        bytes32 descriptionRef;         // DedupedBlobStore reference
+        bytes32 logoImageRef;           // DedupedBlobStore reference
+        bytes32 bannerImageRef;         // DedupedBlobStore reference
+        bytes32 backgroundColorRef;     // DedupedBlobStore reference
+        bytes32 websiteLinkRef;         // DedupedBlobStore reference
+        bytes32 twitterLinkRef;         // DedupedBlobStore reference
+        bytes32 discordLinkRef;         // DedupedBlobStore reference
+        bytes32 merkleRoot;
+    }
+
+    /// @notice View struct for external consumption with decoded strings
+    struct CollectionMetadata {
         address collectionContract;
         bool locked;
         string name;
@@ -108,10 +129,13 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     Ethscriptions public constant ethscriptions = Ethscriptions(Predeploys.ETHSCRIPTIONS);
     string public constant protocolName = "erc-721-ethscriptions-collection";
 
-    mapping(bytes32 => CollectionRecord) private collectionStore;
-    mapping(bytes32 => mapping(uint256 => CollectionItem)) public collectionItems;
+    mapping(bytes32 => CollectionRecord) internal collectionStore;
+    mapping(bytes32 => mapping(uint256 => CollectionItem)) internal collectionItems;
     mapping(bytes32 => Membership) public membershipOfEthscription;
-    mapping(address => bytes32) private collectionAddressToId;
+    mapping(address => bytes32) internal collectionAddressToId;
+
+    /// @dev Deduplicated storage for collection string fields (name, description, URIs, etc.)
+    mapping(bytes32 => bytes32) internal collectionBlobStorage;
 
     bytes32[] public collectionIds;
 
@@ -195,13 +219,14 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         require(!collection.locked, "Collection is locked");
         _requireCollectionOwner(ethscriptionId, editOp.collectionId, "Only collection owner can edit");
 
-        if (bytes(editOp.description).length > 0) collection.description = editOp.description;
-        if (bytes(editOp.logoImageUri).length > 0) collection.logoImageUri = editOp.logoImageUri;
-        if (bytes(editOp.bannerImageUri).length > 0) collection.bannerImageUri = editOp.bannerImageUri;
-        if (bytes(editOp.backgroundColor).length > 0) collection.backgroundColor = editOp.backgroundColor;
-        if (bytes(editOp.websiteLink).length > 0) collection.websiteLink = editOp.websiteLink;
-        if (bytes(editOp.twitterLink).length > 0) collection.twitterLink = editOp.twitterLink;
-        if (bytes(editOp.discordLink).length > 0) collection.discordLink = editOp.discordLink;
+        // Update fields (empty strings allowed to clear fields)
+        (, collection.descriptionRef) = DedupedBlobStore.storeMemory(bytes(editOp.description), collectionBlobStorage);
+        (, collection.logoImageRef) = DedupedBlobStore.storeMemory(bytes(editOp.logoImageUri), collectionBlobStorage);
+        (, collection.bannerImageRef) = DedupedBlobStore.storeMemory(bytes(editOp.bannerImageUri), collectionBlobStorage);
+        (, collection.backgroundColorRef) = DedupedBlobStore.storeMemory(bytes(editOp.backgroundColor), collectionBlobStorage);
+        (, collection.websiteLinkRef) = DedupedBlobStore.storeMemory(bytes(editOp.websiteLink), collectionBlobStorage);
+        (, collection.twitterLinkRef) = DedupedBlobStore.storeMemory(bytes(editOp.twitterLink), collectionBlobStorage);
+        (, collection.discordLinkRef) = DedupedBlobStore.storeMemory(bytes(editOp.discordLink), collectionBlobStorage);
         collection.merkleRoot = editOp.merkleRoot;
 
         emit CollectionEdited(editOp.collectionId);
@@ -263,8 +288,25 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         return collectionStore[collectionId].collectionContract;
     }
 
-    function getCollection(bytes32 collectionId) external view returns (CollectionRecord memory) {
-        return collectionStore[collectionId];
+    function getCollection(bytes32 collectionId) public view returns (CollectionMetadata memory) {
+        CollectionRecord storage record = collectionStore[collectionId];
+        require(record.collectionContract != address(0), "Collection does not exist");
+
+        return CollectionMetadata({
+            collectionContract: record.collectionContract,
+            locked: record.locked,
+            name: DedupedBlobStore.readString(record.nameRef),
+            symbol: DedupedBlobStore.readString(record.symbolRef),
+            maxSupply: record.maxSupply,
+            description: DedupedBlobStore.readString(record.descriptionRef),
+            logoImageUri: DedupedBlobStore.readString(record.logoImageRef),
+            bannerImageUri: DedupedBlobStore.readString(record.bannerImageRef),
+            backgroundColor: DedupedBlobStore.readString(record.backgroundColorRef),
+            websiteLink: DedupedBlobStore.readString(record.websiteLinkRef),
+            twitterLink: DedupedBlobStore.readString(record.twitterLinkRef),
+            discordLink: DedupedBlobStore.readString(record.discordLinkRef),
+            merkleRoot: record.merkleRoot
+        });
     }
 
     function getCollectionItem(bytes32 collectionId, uint256 itemIndex) external view returns (CollectionItem memory) {
@@ -300,29 +342,40 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         require(!collectionExists(collectionId), "Collection already exists");
 
         Proxy collectionProxy = new Proxy{salt: collectionId}(address(this));
-        bytes memory initCalldata = abi.encodeWithSelector(
+        
+        collectionProxy.upgradeToAndCall(collectionsImplementation, abi.encodeWithSelector(
             ERC721EthscriptionsCollection.initialize.selector,
             metadata.name,
             metadata.symbol,
             ethscriptions.ownerOf(collectionId)
-        );
+        ));
         
-        collectionProxy.upgradeToAndCall(collectionsImplementation, initCalldata);
         collectionProxy.changeAdmin(Predeploys.PROXY_ADMIN);
+
+        // Store string fields using DedupedBlobStore
+        (, bytes32 nameRef) = DedupedBlobStore.storeMemory(bytes(metadata.name), collectionBlobStorage);
+        (, bytes32 symbolRef) = DedupedBlobStore.storeMemory(bytes(metadata.symbol), collectionBlobStorage);
+        (, bytes32 descriptionRef) = DedupedBlobStore.storeMemory(bytes(metadata.description), collectionBlobStorage);
+        (, bytes32 logoImageRef) = DedupedBlobStore.storeMemory(bytes(metadata.logoImageUri), collectionBlobStorage);
+        (, bytes32 bannerImageRef) = DedupedBlobStore.storeMemory(bytes(metadata.bannerImageUri), collectionBlobStorage);
+        (, bytes32 backgroundColorRef) = DedupedBlobStore.storeMemory(bytes(metadata.backgroundColor), collectionBlobStorage);
+        (, bytes32 websiteLinkRef) = DedupedBlobStore.storeMemory(bytes(metadata.websiteLink), collectionBlobStorage);
+        (, bytes32 twitterLinkRef) = DedupedBlobStore.storeMemory(bytes(metadata.twitterLink), collectionBlobStorage);
+        (, bytes32 discordLinkRef) = DedupedBlobStore.storeMemory(bytes(metadata.discordLink), collectionBlobStorage);
 
         collectionStore[collectionId] = CollectionRecord({
             collectionContract: address(collectionProxy),
             locked: false,
-            name: metadata.name,
-            symbol: metadata.symbol,
+            nameRef: nameRef,
+            symbolRef: symbolRef,
             maxSupply: metadata.maxSupply,
-            description: metadata.description,
-            logoImageUri: metadata.logoImageUri,
-            bannerImageUri: metadata.bannerImageUri,
-            backgroundColor: metadata.backgroundColor,
-            websiteLink: metadata.websiteLink,
-            twitterLink: metadata.twitterLink,
-            discordLink: metadata.discordLink,
+            descriptionRef: descriptionRef,
+            logoImageRef: logoImageRef,
+            bannerImageRef: bannerImageRef,
+            backgroundColorRef: backgroundColorRef,
+            websiteLinkRef: websiteLinkRef,
+            twitterLinkRef: twitterLinkRef,
+            discordLinkRef: discordLinkRef,
             merkleRoot: metadata.merkleRoot
         });
         
@@ -406,4 +459,18 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     function _inImportMode() private view returns (bool) {
         return block.timestamp < Constants.historicalBackfillApproxDoneAt;
     }
+    
+    function getMembershipOfEthscription(bytes32 ethscriptionId) external view returns (Membership memory) {
+        return membershipOfEthscription[ethscriptionId];
+    }
+    
+    /// @notice Get collection metadata by address
+    /// @param collectionAddress The collection contract address
+    /// @return metadata The collection metadata with decoded strings
+    function getCollectionByAddress(address collectionAddress) external view returns (CollectionMetadata memory) {
+        bytes32 collectionId = collectionAddressToId[collectionAddress];
+        require(collectionId != bytes32(0), "Collection not found");
+        return getCollection(collectionId);
+    }
 }
+

@@ -17,8 +17,8 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
 
     Ethscriptions public constant ethscriptions = Ethscriptions(Predeploys.ETHSCRIPTIONS);
 
-    /// @notice Factory (manager) that deployed this contract
-    address public factory;
+    /// @notice Manager contract that deployed and controls this collection
+    ERC721EthscriptionsCollectionManager public manager;
 
     // Events
     event MemberAdded(bytes32 indexed ethscriptionId, uint256 indexed tokenId);
@@ -30,7 +30,7 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
     error TransferNotAllowed();
 
     modifier onlyFactory() {
-        if (msg.sender != factory) revert NotFactory();
+        if (msg.sender != address(manager)) revert NotFactory();
         _;
     }
 
@@ -41,12 +41,11 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
     ) external initializer {
         __ERC721_init(name_, symbol_);
         __Ownable_init(initialOwner_);
-        factory = msg.sender;
+        manager = ERC721EthscriptionsCollectionManager(msg.sender);
     }
 
-    /// @notice Lookup collection id via the factory registry
+    /// @notice Lookup collection id via the manager registry
     function collectionId() public view returns (bytes32) {
-        ERC721EthscriptionsCollectionManager manager = ERC721EthscriptionsCollectionManager(factory);
         bytes32 id = manager.collectionIdForAddress(address(this));
         if (id == bytes32(0)) revert UnknownCollection();
         return id;
@@ -89,7 +88,6 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
     {
         if (!_tokenExists(tokenId)) revert("Token does not exist");
 
-        ERC721EthscriptionsCollectionManager manager = ERC721EthscriptionsCollectionManager(factory);
         ERC721EthscriptionsCollectionManager.CollectionItem memory item =
             manager.getCollectionItem(collectionId(), tokenId);
         if (item.ethscriptionId == bytes32(0)) revert("Token not in collection");
@@ -141,6 +139,25 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
         override(ERC721EthscriptionsUpgradeable, IERC721)
     {
         revert TransferNotAllowed();
+    }
+
+    /// @notice OpenSea collection-level metadata
+    /// @return JSON string with collection metadata
+    function contractURI() external view returns (string memory) {
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory metadata =
+            manager.getCollectionByAddress(address(this));
+
+        // Build JSON with OpenSea fields
+        string memory json = string.concat(
+            '{"name":"', metadata.name.escapeJSON(),
+            '","description":"', metadata.description.escapeJSON(),
+            '","image":"', metadata.logoImageUri.escapeJSON(),
+            '","banner_image":"', metadata.bannerImageUri.escapeJSON(),
+            '","external_link":"', metadata.websiteLink.escapeJSON(),
+            '"}'
+        );
+
+        return json;
     }
 
     function safeTransferFrom(address, address, uint256, bytes memory)

@@ -68,7 +68,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         // Collection owner is tracked through the original ethscription ownership
 
         // Verify metadata was stored
-        ERC721EthscriptionsCollectionManager.CollectionRecord memory stored = collectionsHandler.getCollection(COLLECTION_TX_HASH);
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory stored = collectionsHandler.getCollection(COLLECTION_TX_HASH);
         assertEq(stored.name, "Test Collection");
         assertEq(stored.symbol, "TEST");
         assertEq(stored.maxSupply, 100);

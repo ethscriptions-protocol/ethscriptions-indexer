@@ -92,6 +92,14 @@ library DedupedBlobStore {
         return SSTORE2Unlimited.read(pointer);
     }
 
+    /// @notice Read blob from storage reference and convert to string
+    /// @dev Convenience wrapper to avoid repetitive string() casting
+    /// @param ref The storage reference (packed or SSTORE2 pointer)
+    /// @return str The retrieved data as string
+    function readString(bytes32 ref) internal view returns (string memory) {
+        return string(read(ref));
+    }
+
     /// @notice Read blob from storage mapping by hash
     /// @dev Looks up reference in mapping, then reads
     /// @param hash The hash key

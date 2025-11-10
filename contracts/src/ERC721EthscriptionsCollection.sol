@@ -101,12 +101,24 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
             manager.getCollectionItem(collectionId, tokenId);
         if (item.ethscriptionId == bytes32(0)) revert("Token not in collection");
 
+        // Get the ethscription data to extract the ethscription number
+        Ethscriptions.Ethscription memory ethscription = ethscriptions.getEthscription(item.ethscriptionId, false);
+
         (string memory mediaType, string memory mediaUri) = ethscriptions.getMediaUri(item.ethscriptionId);
+
+        // Convert ethscriptionId to hex string (0x prefixed)
+        string memory ethscriptionIdHex = uint256(item.ethscriptionId).toHexString(32);
 
         string memory jsonStart = string.concat('{"name":"', item.name.escapeJSON(), '"');
         if (bytes(item.description).length > 0) {
             jsonStart = string.concat(jsonStart, ',"description":"', item.description.escapeJSON(), '"');
         }
+
+        // Add ethscription ID and number
+        string memory ethscriptionFields = string.concat(
+            ',"ethscription_id":"', ethscriptionIdHex, '"',
+            ',"ethscription_number":', ethscription.ethscriptionNumber.toString()
+        );
 
         string memory mediaField = string.concat(
             ',"',
@@ -135,7 +147,7 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
         }
         attributesJson = string.concat(attributesJson, ']');
 
-        string memory json = string.concat(jsonStart, mediaField, bgColor, attributesJson, '}');
+        string memory json = string.concat(jsonStart, ethscriptionFields, mediaField, bgColor, attributesJson, '}');
 
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }

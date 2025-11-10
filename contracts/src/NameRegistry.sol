@@ -189,15 +189,23 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
         if (record.ethscriptionId == bytes32(0)) revert TokenDoesNotExist();
         string memory name = LibString.unpackOne(record.packedName);
 
+        // Get the ethscription data to extract the ethscription number
+        Ethscriptions.Ethscription memory ethscription = ethscriptions.getEthscription(record.ethscriptionId, false);
+
+        // Convert ethscriptionId to hex string (0x prefixed)
+        string memory ethscriptionIdHex = uint256(record.ethscriptionId).toHexString(32);
+
         bytes memory json = abi.encodePacked(
             '{"name":"',
             name,
-            '","description":"Dotless word domain","attributes":[',
+            '","description":"Dotless word domain"',
+            ',"ethscription_id":"',
+            ethscriptionIdHex,
+            '","ethscription_number":',
+            ethscription.ethscriptionNumber.toString(),
+            ',"attributes":[',
             '{"trait_type":"Name","value":"',
             name,
-            '"},',
-            '{"trait_type":"Ethscription","value":"',
-            _bytes32ToHex(record.ethscriptionId),
             '"}',
             ']}'
         );
@@ -210,10 +218,6 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
             revert TransfersDisabled();
         }
         return super._update(to, tokenId, auth);
-    }
-
-    function _bytes32ToHex(bytes32 data) internal pure returns (string memory) {
-        return Strings.toHexString(uint256(data), 32);
     }
 
     function _domainInfo(bytes32 nameKey) internal view returns (DomainInfo memory info) {

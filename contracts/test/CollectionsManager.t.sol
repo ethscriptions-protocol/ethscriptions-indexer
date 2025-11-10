@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "./TestSetup.sol";
 import "../src/ERC721EthscriptionsCollectionManager.sol";
 import "../src/ERC721EthscriptionsCollection.sol";
+import "../src/libraries/Constants.sol";
 import {LibString} from "solady/utils/LibString.sol";
 
 contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
@@ -939,5 +940,492 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         // Verify item was not changed
         ERC721EthscriptionsCollectionManager.CollectionItem memory item = collectionsHandler.getCollectionItem(COLLECTION_TX_HASH, 0);
         assertEq(item.name, "Test Item #0"); // Original name preserved
+    }
+
+    function testNonOwnerCanAddItemWithValidMerkleProof() public {
+        _exitImportMode();
+        bytes memory allowlistedContent = bytes("allowlisted-item");
+        bytes memory siblingContent = bytes("sibling-item");
+
+        ERC721EthscriptionsCollectionManager.Attribute[] memory allowlistedAttributes =
+            _attributeArray("Tier", "Founder");
+        ERC721EthscriptionsCollectionManager.Attribute[] memory siblingAttributes =
+            _attributeArray("Tier", "Guest");
+
+        bytes32 allowlistedLeaf = _computeLeafHash(
+            keccak256(allowlistedContent),
+            0,
+            "Allowlisted Item",
+            "#111111",
+            "Reserved for the allowlist",
+            allowlistedAttributes
+        );
+        bytes32 siblingLeaf = _computeLeafHash(
+            keccak256(siblingContent),
+            1,
+            "Sibling Item",
+            "#222222",
+            "Another whitelisted entry",
+            siblingAttributes
+        );
+
+        bytes32 merkleRoot = _hashPair(allowlistedLeaf, siblingLeaf);
+        _createCollectionWithMerkleRoot(COLLECTION_TX_HASH, merkleRoot);
+
+        ERC721EthscriptionsCollectionManager.ItemData memory itemData =
+            ERC721EthscriptionsCollectionManager.ItemData({
+                contentHash: keccak256(allowlistedContent),
+                itemIndex: 0,
+                name: "Allowlisted Item",
+                backgroundColor: "#111111",
+                description: "Reserved for the allowlist",
+                attributes: allowlistedAttributes,
+                merkleProof: _singleProofArray(siblingLeaf)
+            });
+
+        ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams memory addSelfParams =
+            ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams({
+                collectionId: COLLECTION_TX_HASH,
+                item: itemData
+            });
+
+        Ethscriptions.CreateEthscriptionParams memory addParams = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: ITEM1_TX_HASH,
+            contentUriSha: sha256(allowlistedContent),
+            initialOwner: bob,
+            content: allowlistedContent,
+            mimetype: "text/plain",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "erc-721-ethscriptions-collection",
+                operation: "add_self_to_collection",
+                data: abi.encode(addSelfParams)
+            })
+        });
+
+        vm.prank(bob);
+        ethscriptions.createEthscription(addParams);
+
+        address collectionAddress = collectionsHandler.getCollectionAddress(COLLECTION_TX_HASH);
+        assertTrue(collectionAddress != address(0));
+        ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionAddress);
+
+        assertEq(collection.ownerOf(0), bob);
+        ERC721EthscriptionsCollectionManager.CollectionItem memory stored = collectionsHandler.getCollectionItem(COLLECTION_TX_HASH, 0);
+        assertEq(stored.ethscriptionId, ITEM1_TX_HASH);
+        assertEq(stored.name, "Allowlisted Item");
+    }
+
+    function testNonOwnerCannotAddItemWithoutMerkleRoot() public {
+        _exitImportMode();
+        _createCollectionWithMerkleRoot(COLLECTION_TX_HASH, bytes32(0));
+
+        bytes memory allowlistedContent = bytes("allowlisted-item");
+        ERC721EthscriptionsCollectionManager.Attribute[] memory attributes =
+            _attributeArray("Tier", "Founder");
+
+        ERC721EthscriptionsCollectionManager.ItemData memory itemData =
+            ERC721EthscriptionsCollectionManager.ItemData({
+                contentHash: keccak256(allowlistedContent),
+                itemIndex: 0,
+                name: "Allowlisted Item",
+                backgroundColor: "#111111",
+                description: "Reserved for the allowlist",
+                attributes: attributes,
+                merkleProof: new bytes32[](0)
+            });
+
+        ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams memory addSelfParams =
+            ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams({
+                collectionId: COLLECTION_TX_HASH,
+                item: itemData
+            });
+
+        Ethscriptions.CreateEthscriptionParams memory addParams = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: ITEM1_TX_HASH,
+            contentUriSha: sha256(allowlistedContent),
+            initialOwner: bob,
+            content: allowlistedContent,
+            mimetype: "text/plain",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "erc-721-ethscriptions-collection",
+                operation: "add_self_to_collection",
+                data: abi.encode(addSelfParams)
+            })
+        });
+
+        vm.recordLogs();
+        vm.prank(bob);
+        ethscriptions.createEthscription(addParams);
+
+        _assertProtocolFailure(ITEM1_TX_HASH, "Merkle proof required");
+
+        ERC721EthscriptionsCollectionManager.CollectionItem memory stored =
+            collectionsHandler.getCollectionItem(COLLECTION_TX_HASH, 0);
+        assertEq(stored.ethscriptionId, bytes32(0));
+
+        ERC721EthscriptionsCollectionManager.Membership memory membership =
+            collectionsHandler.getMembershipOfEthscription(ITEM1_TX_HASH);
+        assertEq(membership.collectionId, bytes32(0));
+    }
+
+    function testNonOwnerCannotAddItemWithInvalidMerkleProof() public {
+        _exitImportMode();
+        bytes memory allowlistedContent = bytes("allowlisted-item");
+        bytes memory siblingContent = bytes("sibling-item");
+
+        ERC721EthscriptionsCollectionManager.Attribute[] memory allowlistedAttributes =
+            _attributeArray("Tier", "Founder");
+        ERC721EthscriptionsCollectionManager.Attribute[] memory siblingAttributes =
+            _attributeArray("Tier", "Guest");
+
+        bytes32 allowlistedLeaf = _computeLeafHash(
+            keccak256(allowlistedContent),
+            0,
+            "Allowlisted Item",
+            "#111111",
+            "Reserved for the allowlist",
+            allowlistedAttributes
+        );
+        bytes32 siblingLeaf = _computeLeafHash(
+            keccak256(siblingContent),
+            1,
+            "Sibling Item",
+            "#222222",
+            "Another whitelisted entry",
+            siblingAttributes
+        );
+
+        bytes32 merkleRoot = _hashPair(allowlistedLeaf, siblingLeaf);
+        _createCollectionWithMerkleRoot(COLLECTION_TX_HASH, merkleRoot);
+
+        bytes32[] memory invalidProof = new bytes32[](1);
+        invalidProof[0] = bytes32(uint256(0xdeadbeef));
+
+        ERC721EthscriptionsCollectionManager.ItemData memory itemData =
+            ERC721EthscriptionsCollectionManager.ItemData({
+                contentHash: keccak256(allowlistedContent),
+                itemIndex: 0,
+                name: "Allowlisted Item",
+                backgroundColor: "#111111",
+                description: "Reserved for the allowlist",
+                attributes: allowlistedAttributes,
+                merkleProof: invalidProof
+            });
+
+        ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams memory addSelfParams =
+            ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams({
+                collectionId: COLLECTION_TX_HASH,
+                item: itemData
+            });
+
+        Ethscriptions.CreateEthscriptionParams memory addParams = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: ITEM1_TX_HASH,
+            contentUriSha: sha256(allowlistedContent),
+            initialOwner: bob,
+            content: allowlistedContent,
+            mimetype: "text/plain",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "erc-721-ethscriptions-collection",
+                operation: "add_self_to_collection",
+                data: abi.encode(addSelfParams)
+            })
+        });
+
+        vm.recordLogs();
+        vm.prank(bob);
+        ethscriptions.createEthscription(addParams);
+
+        _assertProtocolFailure(ITEM1_TX_HASH, "Invalid Merkle proof");
+
+        ERC721EthscriptionsCollectionManager.CollectionItem memory stored =
+            collectionsHandler.getCollectionItem(COLLECTION_TX_HASH, 0);
+        assertEq(stored.ethscriptionId, bytes32(0));
+
+        ERC721EthscriptionsCollectionManager.Membership memory membership =
+            collectionsHandler.getMembershipOfEthscription(ITEM1_TX_HASH);
+        assertEq(membership.collectionId, bytes32(0));
+    }
+
+    function testCollectionOwnerBypassesMerkleProof() public {
+        _exitImportMode();
+        bytes32 enforcedRoot = keccak256("allowlist-root");
+        _createCollectionWithMerkleRoot(COLLECTION_TX_HASH, enforcedRoot);
+
+        bytes memory itemContent = bytes("owner-merkle-item");
+        ERC721EthscriptionsCollectionManager.Attribute[] memory attributes = _attributeArray("Tier", "Owner");
+
+        ERC721EthscriptionsCollectionManager.ItemData memory itemData =
+            ERC721EthscriptionsCollectionManager.ItemData({
+                contentHash: keccak256(itemContent),
+                itemIndex: 0,
+                name: "Owner Item",
+                backgroundColor: "#010101",
+                description: "Owner should bypass proof enforcement",
+                attributes: attributes,
+                merkleProof: new bytes32[](0)
+            });
+
+        ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams memory addSelfParams =
+            ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams({
+                collectionId: COLLECTION_TX_HASH,
+                item: itemData
+            });
+
+        Ethscriptions.CreateEthscriptionParams memory addParams = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: ITEM1_TX_HASH,
+            contentUriSha: sha256(itemContent),
+            initialOwner: alice,
+            content: itemContent,
+            mimetype: "text/plain",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "erc-721-ethscriptions-collection",
+                operation: "add_self_to_collection",
+                data: abi.encode(addSelfParams)
+            })
+        });
+
+        vm.prank(alice);
+        ethscriptions.createEthscription(addParams);
+
+        address collectionAddress = collectionsHandler.getCollectionAddress(COLLECTION_TX_HASH);
+        ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionAddress);
+        assertEq(collection.ownerOf(0), alice);
+
+        ERC721EthscriptionsCollectionManager.CollectionItem memory stored =
+            collectionsHandler.getCollectionItem(COLLECTION_TX_HASH, 0);
+        assertEq(stored.ethscriptionId, ITEM1_TX_HASH);
+    }
+
+    function testEditingMerkleRootChangesNonOwnerAccess() public {
+        _exitImportMode();
+
+        bytes memory allowlistedContent = bytes("allowlisted-item");
+        bytes memory siblingContent = bytes("sibling-item");
+
+        ERC721EthscriptionsCollectionManager.Attribute[] memory allowlistedAttributes =
+            _attributeArray("Tier", "Founder");
+        ERC721EthscriptionsCollectionManager.Attribute[] memory siblingAttributes =
+            _attributeArray("Tier", "Guest");
+
+        bytes32 allowlistedLeaf = _computeLeafHash(
+            keccak256(allowlistedContent),
+            0,
+            "Allowlisted Item",
+            "#111111",
+            "Reserved for the allowlist",
+            allowlistedAttributes
+        );
+        bytes32 siblingLeaf = _computeLeafHash(
+            keccak256(siblingContent),
+            1,
+            "Sibling Item",
+            "#222222",
+            "Another whitelisted entry",
+            siblingAttributes
+        );
+
+        bytes32 merkleRoot = _hashPair(allowlistedLeaf, siblingLeaf);
+        _createCollectionWithMerkleRoot(COLLECTION_TX_HASH, bytes32(0));
+
+        ERC721EthscriptionsCollectionManager.ItemData memory itemData =
+            ERC721EthscriptionsCollectionManager.ItemData({
+                contentHash: keccak256(allowlistedContent),
+                itemIndex: 0,
+                name: "Allowlisted Item",
+                backgroundColor: "#111111",
+                description: "Reserved for the allowlist",
+                attributes: allowlistedAttributes,
+                merkleProof: _singleProofArray(siblingLeaf)
+            });
+
+        ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams memory addSelfParams =
+            ERC721EthscriptionsCollectionManager.AddSelfToCollectionParams({
+                collectionId: COLLECTION_TX_HASH,
+                item: itemData
+            });
+
+        Ethscriptions.CreateEthscriptionParams memory firstAttempt = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: ITEM1_TX_HASH,
+            contentUriSha: sha256(allowlistedContent),
+            initialOwner: bob,
+            content: allowlistedContent,
+            mimetype: "text/plain",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "erc-721-ethscriptions-collection",
+                operation: "add_self_to_collection",
+                data: abi.encode(addSelfParams)
+            })
+        });
+
+        vm.recordLogs();
+        vm.prank(bob);
+        ethscriptions.createEthscription(firstAttempt);
+        _assertProtocolFailure(ITEM1_TX_HASH, "Merkle proof required");
+
+        ERC721EthscriptionsCollectionManager.CollectionItem memory emptySlot =
+            collectionsHandler.getCollectionItem(COLLECTION_TX_HASH, 0);
+        assertEq(emptySlot.ethscriptionId, bytes32(0));
+
+        _editCollectionMerkleRoot(bytes32(uint256(0xED111)), COLLECTION_TX_HASH, merkleRoot);
+
+        Ethscriptions.CreateEthscriptionParams memory secondAttempt = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: ITEM2_TX_HASH,
+            contentUriSha: sha256(allowlistedContent),
+            initialOwner: bob,
+            content: allowlistedContent,
+            mimetype: "text/plain",
+            esip6: true,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "erc-721-ethscriptions-collection",
+                operation: "add_self_to_collection",
+                data: abi.encode(addSelfParams)
+            })
+        });
+
+        vm.prank(bob);
+        ethscriptions.createEthscription(secondAttempt);
+
+        ERC721EthscriptionsCollectionManager.CollectionItem memory stored =
+            collectionsHandler.getCollectionItem(COLLECTION_TX_HASH, 0);
+        assertEq(stored.ethscriptionId, ITEM2_TX_HASH);
+
+        ERC721EthscriptionsCollectionManager.Membership memory membership =
+            collectionsHandler.getMembershipOfEthscription(ITEM2_TX_HASH);
+        assertEq(membership.collectionId, COLLECTION_TX_HASH);
+        assertEq(membership.tokenIdPlusOne, 1);
+
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory metadata =
+            collectionsHandler.getCollection(COLLECTION_TX_HASH);
+        assertEq(metadata.merkleRoot, merkleRoot);
+    }
+
+    function _createCollectionWithMerkleRoot(bytes32 collectionId, bytes32 merkleRoot) private {
+        ERC721EthscriptionsCollectionManager.CollectionParams memory metadata =
+            ERC721EthscriptionsCollectionManager.CollectionParams({
+                name: "Merkle Collection",
+                symbol: "MRKL",
+                maxSupply: 100,
+                description: "Collection that requires proofs",
+                logoImageUri: "",
+                bannerImageUri: "",
+                backgroundColor: "",
+                websiteLink: "",
+                twitterLink: "",
+                discordLink: "",
+                merkleRoot: merkleRoot
+            });
+
+        string memory collectionContent =
+            'data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Merkle Collection"}';
+
+        Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: collectionId,
+            contentUriSha: sha256(bytes(collectionContent)),
+            initialOwner: alice,
+            content: bytes(collectionContent),
+            mimetype: "application/json",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "erc-721-ethscriptions-collection",
+                operation: "create_collection",
+                data: abi.encode(metadata)
+            })
+        });
+
+        vm.prank(alice);
+        ethscriptions.createEthscription(params);
+    }
+
+    function _attributeArray(string memory trait, string memory value)
+        private
+        pure
+        returns (ERC721EthscriptionsCollectionManager.Attribute[] memory attrs)
+    {
+        attrs = new ERC721EthscriptionsCollectionManager.Attribute[](1);
+        attrs[0] = ERC721EthscriptionsCollectionManager.Attribute({traitType: trait, value: value});
+    }
+
+    function _computeLeafHash(
+        bytes32 contentHash,
+        uint256 itemIndex,
+        string memory name,
+        string memory backgroundColor,
+        string memory description,
+        ERC721EthscriptionsCollectionManager.Attribute[] memory attributes
+    ) private pure returns (bytes32) {
+        return keccak256(abi.encode(contentHash, itemIndex, name, backgroundColor, description, attributes));
+    }
+
+    function _hashPair(bytes32 a, bytes32 b) private pure returns (bytes32) {
+        return a < b ? keccak256(abi.encodePacked(a, b)) : keccak256(abi.encodePacked(b, a));
+    }
+
+    function _singleProofArray(bytes32 sibling) private pure returns (bytes32[] memory proof) {
+        proof = new bytes32[](1);
+        proof[0] = sibling;
+    }
+
+    function _assertProtocolFailure(bytes32 ethscriptionId, string memory expectedMessage) private {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 failureTopic = keccak256("ProtocolHandlerFailed(bytes32,string,bytes)");
+        bool found;
+        string memory protocol;
+        bytes memory revertData;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            Vm.Log memory entry = logs[i];
+            if (entry.topics.length >= 2 && entry.topics[0] == failureTopic && entry.topics[1] == ethscriptionId) {
+                (protocol, revertData) = abi.decode(entry.data, (string, bytes));
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "Expected ProtocolHandlerFailed event");
+        assertEq(protocol, "erc-721-ethscriptions-collection");
+
+        bytes memory expected = abi.encodeWithSignature("Error(string)", expectedMessage);
+        assertEq(keccak256(revertData), keccak256(expected));
+    }
+
+    function _exitImportMode() private {
+        vm.warp(Constants.historicalBackfillApproxDoneAt + 1);
+    }
+
+    function _editCollectionMerkleRoot(bytes32 editEthscriptionId, bytes32 collectionId, bytes32 newRoot) private {
+        ERC721EthscriptionsCollectionManager.EditCollectionOperation memory editOp =
+            ERC721EthscriptionsCollectionManager.EditCollectionOperation({
+                collectionId: collectionId,
+                description: "",
+                logoImageUri: "",
+                bannerImageUri: "",
+                backgroundColor: "",
+                websiteLink: "",
+                twitterLink: "",
+                discordLink: "",
+                merkleRoot: newRoot
+            });
+
+        Ethscriptions.CreateEthscriptionParams memory editParams = Ethscriptions.CreateEthscriptionParams({
+            ethscriptionId: editEthscriptionId,
+            contentUriSha: sha256(bytes("edit-merkle")),
+            initialOwner: alice,
+            content: bytes("edit-merkle"),
+            mimetype: "text/plain",
+            esip6: false,
+            protocolParams: Ethscriptions.ProtocolParams({
+                protocolName: "erc-721-ethscriptions-collection",
+                operation: "edit_collection",
+                data: abi.encode(editOp)
+            })
+        });
+
+        vm.prank(alice);
+        ethscriptions.createEthscription(editParams);
     }
 }

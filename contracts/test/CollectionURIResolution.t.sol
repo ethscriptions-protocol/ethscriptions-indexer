@@ -72,7 +72,7 @@ contract CollectionURIResolutionTest is TestSetup {
         // Create collection with esc:// reference to the image
         string memory escUri = string.concat(
             "esc://ethscriptions/",
-            uint256(IMAGE_ETSC_TX_HASH).toHexString(),
+            uint256(IMAGE_ETSC_TX_HASH).toHexString(32),
             "/data"
         );
 
@@ -99,7 +99,7 @@ contract CollectionURIResolutionTest is TestSetup {
         bytes32 fakeId = keccak256("nonexistent");
         string memory escUri = string.concat(
             "esc://ethscriptions/",
-            uint256(fakeId).toHexString(),
+            uint256(fakeId).toHexString(32),
             "/data"
         );
 

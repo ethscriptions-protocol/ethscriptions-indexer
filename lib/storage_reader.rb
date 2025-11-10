@@ -157,10 +157,10 @@ class StorageReader
         protocol_name: ethscription_data[15],
         operation: ethscription_data[16]
       }
-    rescue => e
-      Rails.logger.error "Failed to get ethscription with content #{tx_hash}: #{e.message}"
-      Rails.logger.error e.backtrace.join("\n") if Rails.env.development?
-      raise e
+    rescue EthRpcClient::ExecutionRevertedError => e
+      # Contract reverted - ethscription doesn't exist
+      Rails.logger.debug "Ethscription #{tx_hash} doesn't exist (contract reverted): #{e.message}"
+      nil
     end
 
     def get_ethscription(tx_hash, block_tag: 'latest')

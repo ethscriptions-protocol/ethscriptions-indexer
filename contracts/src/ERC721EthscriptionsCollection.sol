@@ -182,7 +182,7 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
             '"}'
         );
 
-        return json;
+        return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
 
     function safeTransferFrom(address, address, uint256, bytes memory)

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "./TestSetup.sol";
 import {LibString} from "solady/utils/LibString.sol";
+import {Base64} from "solady/utils/Base64.sol";
 
 contract CollectionURIResolutionTest is TestSetup {
     using LibString for *;
@@ -33,7 +34,18 @@ contract CollectionURIResolutionTest is TestSetup {
         string memory contractUri = collection.contractURI();
 
         assertTrue(bytes(contractUri).length > 0, "Should have contractURI");
-        assertTrue(contractUri.contains(regularUri), "Should contain original URI");
+
+        // contractURI returns base64-encoded JSON, decode it
+        // Check it starts with data URI prefix
+        string memory prefix = "data:application/json;base64,";
+        assertTrue(contractUri.startsWith(prefix), "Should be a data URI");
+
+        // Extract and decode the base64 part
+        string memory base64Part = contractUri.slice(bytes(prefix).length);
+        bytes memory decodedBytes = Base64.decode(base64Part);
+        string memory decodedJson = string(decodedBytes);
+
+        assertTrue(decodedJson.contains(regularUri), "Should contain original URI");
     }
 
     function test_DataURIPassesThrough() public {

@@ -170,7 +170,7 @@ class EthscriptionsApiClient
           current_owner: current_owner,
           previous_owner: previous_owner,
           content_uri: item['content_uri'],
-          content_hash: "0x" +  Eth::Util.keccak256(content).unpack1('H*'),
+          content_hash: "0x" + Eth::Util.keccak256(content).unpack1('H*'),
           esip6: item['esip6'] || false,
           mimetype: item['mimetype'],
           media_type: item['media_type'],

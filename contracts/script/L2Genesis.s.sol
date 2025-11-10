@@ -224,10 +224,10 @@ contract L2Genesis is Script {
         _setImplementationCodeNamed(Predeploys.ERC20_FIXED_DENOMINATION_MANAGER, "ERC20FixedDenominationManager");
         _setImplementationCodeNamed(Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER, "ERC721EthscriptionsCollectionManager");
         _setImplementationCodeNamed(Predeploys.ETHSCRIPTIONS_PROVER, "EthscriptionsProver");
-        // Templates and direct deploys live directly at their addresses (no proxy wrapping)
+        _setImplementationCodeNamed(Predeploys.NAME_REGISTRY, "NameRegistry");
+        // Templates live directly at their addresses (no proxy wrapping)
         _setCodeAt(Predeploys.ERC20_FIXED_DENOMINATION_IMPLEMENTATION, "ERC20FixedDenomination");
         _setCodeAt(Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_IMPLEMENTATION, "ERC721EthscriptionsCollection");
-        _setCodeAt(Predeploys.NAME_REGISTRY, "NameRegistry");
 
         // Create genesis Ethscriptions (writes via proxy to proxy storage)
         createGenesisEthscriptions();

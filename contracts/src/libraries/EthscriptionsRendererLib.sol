@@ -32,7 +32,7 @@ library EthscriptionsRendererLib {
         // Build in chunks to avoid stack too deep
         string memory part1 = string.concat(
             '[{"trait_type":"Ethscription ID","value":"',
-            uint256(ethscriptionId).toHexString(),
+            uint256(ethscriptionId).toHexString(32),
             '"},{"trait_type":"Ethscription Number","display_type":"number","value":',
             etsc.ethscriptionNumber.toString(),
             '},{"trait_type":"Creator","value":"',
@@ -43,7 +43,7 @@ library EthscriptionsRendererLib {
 
         string memory part2 = string.concat(
             '"},{"trait_type":"Content Hash","value":"',
-            uint256(etsc.contentHash).toHexString(),
+            uint256(etsc.contentHash).toHexString(32),
             '"},{"trait_type":"MIME Type","value":"',
             mimetype.escapeJSON(),
             '"},{"trait_type":"ESIP-6","value":"',

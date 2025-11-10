@@ -48,6 +48,29 @@ class EthscriptionsApiClient
       })
     end
 
+    def fetch_single_ethscription(number)
+      # Fetch a single ethscription by its number
+      path = "/ethscriptions/#{number}"
+
+      begin
+        data = fetch_json(path)
+        # The show endpoint returns the ethscription directly
+        normalize_creations([data['result']]).first
+      rescue HttpError => e
+        if e.code == 404
+          # Ethscription doesn't exist
+          nil
+        else
+          # Re-raise other HTTP errors for retry handling
+          raise
+        end
+      end
+    rescue HttpError, ApiError, NetworkError => e
+      # Wrap all internal errors into a single type for callers
+      Rails.logger.error "API unavailable for ethscription ##{number} after retries: #{e.message}"
+      raise ApiUnavailableError, "API unavailable after #{ENV.fetch('ETHSCRIPTIONS_API_RETRIES', 7)} retries: #{e.message}"
+    end
+
     def fetch_paginated(path, params)
       results = []
       page_key = nil
@@ -130,13 +153,13 @@ class EthscriptionsApiClient
         current_owner = (item['current_owner'] || '').downcase
         previous_owner = (item['previous_owner'] || '').downcase
 
-        # Decode the b64_content field if present
         content = Base64.decode64(item['b64_content'])
 
         {
           tx_hash: tx_hash,
           transaction_hash: tx_hash, # Include both for compatibility
           block_number: item['block_number'],
+          l1_block_number: item['block_number'],
           transaction_index: item['transaction_index'],
           block_timestamp: item['block_timestamp'],
           block_blockhash: item['block_blockhash'],
@@ -147,7 +170,7 @@ class EthscriptionsApiClient
           current_owner: current_owner,
           previous_owner: previous_owner,
           content_uri: item['content_uri'],
-          content_sha: "0x" + Digest::SHA256.hexdigest(content),
+          content_hash: "0x" +  Eth::Util.keccak256(content).unpack1('H*'),
           esip6: item['esip6'] || false,
           mimetype: item['mimetype'],
           media_type: item['media_type'],

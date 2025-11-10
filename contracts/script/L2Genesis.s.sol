@@ -212,7 +212,8 @@ contract L2Genesis is Script {
             bool isProxiedContract = addr == Predeploys.ETHSCRIPTIONS ||
                 addr == Predeploys.ERC20_FIXED_DENOMINATION_MANAGER ||
                 addr == Predeploys.ETHSCRIPTIONS_PROVER ||
-                addr == Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER;
+                addr == Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER ||
+                addr == Predeploys.NAME_REGISTRY;
             if (isProxiedContract) {
                 address impl = Predeploys.predeployToCodeNamespace(addr);
                 setImplementation(addr, impl);
@@ -223,7 +224,7 @@ contract L2Genesis is Script {
         _setImplementationCodeNamed(Predeploys.ERC20_FIXED_DENOMINATION_MANAGER, "ERC20FixedDenominationManager");
         _setImplementationCodeNamed(Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER, "ERC721EthscriptionsCollectionManager");
         _setImplementationCodeNamed(Predeploys.ETHSCRIPTIONS_PROVER, "EthscriptionsProver");
-        // Templates live directly at their implementation addresses (no proxy wrapping)
+        // Templates and direct deploys live directly at their addresses (no proxy wrapping)
         _setCodeAt(Predeploys.ERC20_FIXED_DENOMINATION_IMPLEMENTATION, "ERC20FixedDenomination");
         _setCodeAt(Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_IMPLEMENTATION, "ERC721EthscriptionsCollection");
         _setCodeAt(Predeploys.NAME_REGISTRY, "NameRegistry");

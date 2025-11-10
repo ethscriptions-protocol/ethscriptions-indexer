@@ -59,7 +59,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
     end
 
     it 'builds create_collection_and_add_self for the leader via import fallback' do
-      protocol, operation, encoded = described_class.extract(
+      protocol, operation, encoded = ProtocolParser.for_calldata(
         'data:,{}',
         ethscription_id: ByteString.from_hex(leader_id)
       )
@@ -67,7 +67,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       expect(operation).to eq('create_collection_and_add_self'.b)
 
       decoded = Eth::Abi.decode([
-        '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,string,string,(string,string)[],bytes32[]))'
+        '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'
       ], encoded)[0]
 
       metadata = decoded[0]
@@ -77,13 +77,14 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       expect(metadata[1]).to eq('TEST')            # symbol (from slug)
       expect(metadata[2]).to eq(2)                 # maxSupply from total_supply
 
-      expect(item[0]).to eq(0)                     # item index
-      expect(item[1]).to eq('Item Zero')           # name
-      expect(item[2]).to eq('')                    # background_color
+      # Item now has contentHash as first field
+      expect(item[1]).to eq(0)                     # item index (now at position 1)
+      expect(item[2]).to eq('Item Zero')           # name (now at position 2)
+      expect(item[3]).to eq('')                    # background_color (now at position 3)
     end
 
     it 'builds add_self_to_collection for a member via import fallback' do
-      protocol, operation, encoded = described_class.extract(
+      protocol, operation, encoded = ProtocolParser.for_calldata(
         'data:,{}',
         ethscription_id: ByteString.from_hex(member_id)
       )
@@ -92,16 +93,17 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       expect(operation).to eq('add_self_to_collection'.b)
 
       decoded = Eth::Abi.decode([
-        '(bytes32,(uint256,string,string,string,(string,string)[],bytes32[]))'
+        '(bytes32,(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'
       ], encoded)[0]
 
       collection_id = decoded[0]
       item = decoded[1]
 
       expect(collection_id.unpack1('H*')).to eq(leader_id[2..])
-      expect(item[0]).to eq(1)                     # item index
-      expect(item[1]).to eq('Item One')            # name
-      expect(item[2]).to eq('')                    # background_color
+      # Item now has contentHash as first field
+      expect(item[1]).to eq(1)                     # item index (now at position 1)
+      expect(item[2]).to eq('Item One')            # name (now at position 2)
+      expect(item[3]).to eq('')                    # background_color (now at position 3)
     end
 
     it 'parses normal content for add_self_to_collection (non-import)' do
@@ -119,21 +121,22 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         }
       }
 
-      protocol, operation, encoded = described_class.extract('data:,' + content_json.to_json)
+      protocol, operation, encoded = ProtocolParser.for_calldata('data:,' + content_json.to_json)
 
       expect(protocol).to eq('erc-721-ethscriptions-collection'.b)
       expect(operation).to eq('add_self_to_collection'.b)
 
       decoded = Eth::Abi.decode([
-        '(bytes32,(uint256,string,string,string,(string,string)[],bytes32[]))'
+        '(bytes32,(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'
       ], encoded)[0]
 
       expect(decoded[0].unpack1('H*')).to eq(leader_id[2..])
       item = decoded[1]
-      expect(item[0]).to eq(5)                     # item_index
-      expect(item[1]).to eq('Normal Item')         # name
-      expect(item[2]).to eq('#000000')             # background_color
-      expect(item[3]).to eq('desc')                # description
+      # Item now has contentHash as first field
+      expect(item[1]).to eq(5)                     # item_index (now at position 1)
+      expect(item[2]).to eq('Normal Item')         # name (now at position 2)
+      expect(item[3]).to eq('#000000')             # background_color (now at position 3)
+      expect(item[4]).to eq('desc')                # description (now at position 4)
     end
   end
 
@@ -142,7 +145,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       # This ethscription should be the leader of a collection in the live JSON files
       specific_id = '0x05aac415994e0e01e66c4970133a51a4cdcea1f3a967743b87e6eb08f2f4d9f9'
 
-      protocol, operation, encoded = described_class.extract(
+      protocol, operation, encoded = ProtocolParser.for_calldata(
         'data:,{}',
         ethscription_id: ByteString.from_hex(specific_id)
       )
@@ -151,10 +154,10 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
       # Decode to verify it's properly formed
       decoded = Eth::Abi.decode([
-        '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(uint256,string,string,string,(string,string)[],bytes32[]))'
+        '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'
       ], encoded)[0]
 
-      metadata = decoded[0] 
+      metadata = decoded[0]
       item = decoded[1]
 
       # Should have valid metadata
@@ -163,13 +166,14 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       expect(metadata[1]).to be_a(String) # symbol
       expect(metadata[2]).to be_a(Integer) # maxSupply
 
-      # Should have valid item data
-      expect(item[0]).to be_a(Integer) # item_index
-      expect(item[1]).to be_a(String)  # name
-      expect(item[2]).to be_a(String)  # background_color
-      expect(item[3]).to be_a(String)  # description
-      expect(item[4]).to be_an(Array)  # attributes
-      expect(item[5]).to be_an(Array)  # merkle_proof
+      # Should have valid item data (contentHash is first field now)
+      expect(item[0]).to be_a(String)  # content_hash (packed bytes)
+      expect(item[1]).to be_a(Integer) # item_index
+      expect(item[2]).to be_a(String)  # name
+      expect(item[3]).to be_a(String)  # background_color
+      expect(item[4]).to be_a(String)  # description
+      expect(item[5]).to be_an(Array)  # attributes
+      expect(item[6]).to be_an(Array)  # merkle_proof
     end
   end
 
@@ -180,7 +184,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
     let(:specific_id) { '0x05aac415994e0e01e66c4970133a51a4cdcea1f3a967743b87e6eb08f2f4d9f9' }
 
     it 'creates collection and adds ethscription using import fallback for specific ID' do
-      # Create ethscription with empty content - should use import fallback
+      # Create ethscription with PNG content - should use import fallback
       tx_spec = l1_tx(
         creator: creator,
         to: creator,

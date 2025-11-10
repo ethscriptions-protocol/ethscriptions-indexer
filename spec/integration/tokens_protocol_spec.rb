@@ -308,8 +308,8 @@ RSpec.describe "Tokens Protocol", type: :integration do
         # The token regex requires exact format with no extra spaces
         expect(stored[:content]).to include('erc-20')
 
-        token_params = Erc20FixedDenominationParser.extract(content_uri)
-        expect(token_params).to eq(Erc20FixedDenominationParser::DEFAULT_PARAMS)
+        token_params = ProtocolParser.for_calldata(content_uri)
+        expect(token_params).to eq([''.b, ''.b, ''.b])
       end
     end
 

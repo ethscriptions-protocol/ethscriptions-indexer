@@ -7,6 +7,7 @@ import {Predeploys} from "../src/libraries/Predeploys.sol";
 import {Constants} from "../src/libraries/Constants.sol";
 import {Ethscriptions} from "../src/Ethscriptions.sol";
 import {MetaStoreLib} from "../src/libraries/MetaStoreLib.sol";
+import {NameRegistry} from "../src/NameRegistry.sol";
 import "forge-std/console.sol";
 
 /// @title GenesisEthscriptions
@@ -225,6 +226,7 @@ contract L2Genesis is Script {
         // Templates live directly at their implementation addresses (no proxy wrapping)
         _setCodeAt(Predeploys.ERC20_FIXED_DENOMINATION_IMPLEMENTATION, "ERC20FixedDenomination");
         _setCodeAt(Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_IMPLEMENTATION, "ERC721EthscriptionsCollection");
+        _setCodeAt(Predeploys.NAME_REGISTRY, "NameRegistry");
 
         // Create genesis Ethscriptions (writes via proxy to proxy storage)
         createGenesisEthscriptions();
@@ -242,6 +244,9 @@ contract L2Genesis is Script {
 
         ethscriptions.registerProtocol("erc-721-ethscriptions-collection", Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER);
         console.log("Registered erc-721-ethscriptions-collection protocol handler:", Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER);
+
+        ethscriptions.registerProtocol("word-domains", Predeploys.NAME_REGISTRY);
+        console.log("Registered word-domains protocol handler:", Predeploys.NAME_REGISTRY);
     }
 
     /// @notice Deploy L1Block contract (stores L1 block attributes)

@@ -163,7 +163,7 @@ contract EthscriptionsTokenTest is TestSetup {
     function testMultipleMints() public {
         // Deploy the token
         testTokenDeploy();
-        
+
         address tokenAddress = fixedDenominationManager.getTokenAddressByTick("TEST");
         ERC20FixedDenomination token = ERC20FixedDenomination(tokenAddress);
         
@@ -208,6 +208,32 @@ contract EthscriptionsTokenTest is TestSetup {
         // Verify total minted
         ERC20FixedDenominationManager.TokenInfo memory info = fixedDenominationManager.getTokenInfo(DEPLOY_TX_HASH);
         assertEq(info.totalMinted, 2000);
+    }
+
+    function testMintIdCannotBeReused() public {
+        // Deploy and perform initial mint with ID 1
+        testTokenMint();
+
+        // Attempt to mint the same ID again
+        vm.prank(charlie);
+        string memory mintContent = 'data:,{"p":"erc-20","op":"mint","tick":"TEST","id":"1","amt":"1000"}';
+        ERC20FixedDenominationManager.MintOperation memory mintOp = ERC20FixedDenominationManager.MintOperation({
+            tick: "TEST",
+            id: 1,
+            amount: 1000
+        });
+
+        Ethscriptions.CreateEthscriptionParams memory params = createTokenParams(
+            bytes32(uint256(0xDEADFEED)),
+            charlie,
+            mintContent,
+            CANONICAL_PROTOCOL,
+            "mint",
+            abi.encode(mintOp)
+        );
+
+        vm.expectRevert(Ethscriptions.DuplicateContentUri.selector);
+        ethscriptions.createEthscription(params);
     }
     
     function testMaxSupplyEnforcement() public {
@@ -578,5 +604,234 @@ contract EthscriptionsTokenTest is TestSetup {
         assertEq(token.balanceOf(bob), 0);
         assertEq(token.balanceOf(address(0)), 1000 ether);
         assertEq(token.totalSupply(), 1000 ether);
+    }
+
+    // =============================================================
+    //                    COLLECTION TESTS
+    // =============================================================
+
+    function testCollectionDeployedOnTokenDeploy() public {
+        // Deploy a token as Alice
+        vm.prank(alice);
+
+        string memory deployContent = 'data:,{"p":"erc-20","op":"deploy","tick":"COLL","max":"10000","lim":"100"}';
+
+        ERC20FixedDenominationManager.DeployOperation memory deployOp = ERC20FixedDenominationManager.DeployOperation({
+            tick: "COLL",
+            maxSupply: 10000,
+            mintAmount: 100
+        });
+
+        Ethscriptions.CreateEthscriptionParams memory params = createTokenParams(
+            DEPLOY_TX_HASH,
+            alice,
+            deployContent,
+            CANONICAL_PROTOCOL,
+            "deploy",
+            abi.encode(deployOp)
+        );
+
+        ethscriptions.createEthscription(params);
+
+        // Verify collection was deployed
+        address collectionAddr = fixedDenominationManager.getCollectionAddress(DEPLOY_TX_HASH);
+        assertTrue(collectionAddr != address(0), "Collection should be deployed");
+
+        // Verify collection properties
+        ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionAddr);
+        assertEq(collection.name(), "COLL ERC-721");
+        assertEq(collection.symbol(), "COLL-ERC-721");
+        assertEq(collection.collectionId(), DEPLOY_TX_HASH);
+
+        // Verify collection lookups work
+        assertEq(fixedDenominationManager.collectionIdForAddress(collectionAddr), DEPLOY_TX_HASH);
+        assertEq(fixedDenominationManager.collectionAddressForId(DEPLOY_TX_HASH), collectionAddr);
+    }
+
+    function testCollectionTokenMintedOnNoteMint() public {
+        // First deploy
+        testCollectionDeployedOnTokenDeploy();
+
+        // Get collection address
+        address collectionAddr = fixedDenominationManager.getCollectionAddress(DEPLOY_TX_HASH);
+        ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionAddr);
+
+        // Mint a note as Bob
+        string memory mintContent = 'data:,{"p":"erc-20","op":"mint","tick":"COLL","id":"1","amt":"100"}';
+
+        ERC20FixedDenominationManager.MintOperation memory mintOp = ERC20FixedDenominationManager.MintOperation({
+            tick: "COLL",
+            id: 1,
+            amount: 100
+        });
+
+        Ethscriptions.CreateEthscriptionParams memory mintParams = createTokenParams(
+            MINT_TX_HASH_1,
+            bob,
+            mintContent,
+            CANONICAL_PROTOCOL,
+            "mint",
+            abi.encode(mintOp)
+        );
+
+        vm.prank(bob);
+        ethscriptions.createEthscription(mintParams);
+
+        // Verify collection NFT was minted with tokenId = mintId
+        assertEq(collection.ownerOf(1), bob, "Bob should own collection token #1");
+        assertEq(collection.totalSupply(), 1, "Collection should have 1 NFT");
+
+        // Verify ERC-20 tokens were also minted
+        address tokenAddr = fixedDenominationManager.getTokenAddressByTick("COLL");
+        ERC20FixedDenomination token = ERC20FixedDenomination(tokenAddr);
+        assertEq(token.balanceOf(bob), 100 ether, "Bob should have 100 tokens");
+    }
+
+    function testCollectionTokenTransferredOnNoteTransfer() public {
+        // Setup: Deploy and mint
+        testCollectionTokenMintedOnNoteMint();
+
+        // Get collection
+        address collectionAddr = fixedDenominationManager.getCollectionAddress(DEPLOY_TX_HASH);
+        ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionAddr);
+
+        // Get ERC-20 token
+        address tokenAddr = fixedDenominationManager.getTokenAddressByTick("COLL");
+        ERC20FixedDenomination token = ERC20FixedDenomination(tokenAddr);
+
+        // Initial state
+        assertEq(collection.ownerOf(1), bob);
+        assertEq(token.balanceOf(bob), 100 ether);
+        assertEq(token.balanceOf(charlie), 0);
+
+        // Transfer the mint inscription from Bob to Charlie
+        vm.prank(bob);
+        ethscriptions.transferEthscription(charlie, MINT_TX_HASH_1);
+
+        // Verify both collection NFT and ERC-20 transferred
+        assertEq(collection.ownerOf(1), charlie, "Charlie should now own collection token #1");
+        assertEq(token.balanceOf(bob), 0, "Bob should have 0 tokens");
+        assertEq(token.balanceOf(charlie), 100 ether, "Charlie should have 100 tokens");
+    }
+
+    function testCollectionTokenURI() public {
+        // Setup: Deploy and mint
+        testCollectionTokenMintedOnNoteMint();
+
+        // Get collection
+        address collectionAddr = fixedDenominationManager.getCollectionAddress(DEPLOY_TX_HASH);
+        ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionAddr);
+
+        // Get token URI
+        string memory uri = collection.tokenURI(1);
+
+        // Verify it starts with data URI prefix
+        bytes memory uriBytes = bytes(uri);
+        bytes memory expectedPrefix = bytes("data:application/json;base64,");
+        for (uint i = 0; i < expectedPrefix.length; i++) {
+            assertEq(uriBytes[i], expectedPrefix[i], "URI should start with JSON data prefix");
+        }
+
+        // Could decode and verify JSON contents but that would require base64 decoding
+        // Just verify it doesn't revert and returns something
+        assertTrue(bytes(uri).length > 30, "URI should have content");
+    }
+
+    function testCollectionMetadataView() public {
+        // Setup: Deploy
+        testCollectionDeployedOnTokenDeploy();
+
+        // Get collection address
+        address collectionAddr = fixedDenominationManager.getCollectionAddress(DEPLOY_TX_HASH);
+
+        // Get collection metadata via manager
+        ERC721EthscriptionsCollectionManager.CollectionMetadata memory metadata =
+            fixedDenominationManager.getCollectionByAddress(collectionAddr);
+
+        // Verify metadata
+        assertEq(metadata.name, "COLL ERC-721");
+        assertEq(metadata.symbol, "COLL-ERC-721");
+        assertEq(metadata.maxSupply, 100); // 10000 maxSupply / 100 mintAmount = 100 notes
+        assertEq(metadata.description, "Fixed denomination notes for COLL");
+        assertEq(metadata.collectionContract, collectionAddr);
+        assertFalse(metadata.locked);
+    }
+
+    function testCollectionItemView() public {
+        // Setup: Deploy and mint
+        testCollectionTokenMintedOnNoteMint();
+
+        // Get collection item via manager
+        ERC721EthscriptionsCollectionManager.CollectionItem memory item =
+            fixedDenominationManager.getCollectionItem(DEPLOY_TX_HASH, 1);
+
+        // Verify item metadata
+        assertEq(item.ethscriptionId, MINT_TX_HASH_1);
+        assertEq(item.name, "COLL #1");
+        assertEq(item.description, "100 COLL note");
+        assertEq(item.itemIndex, 1);
+
+        // Verify attributes
+        assertEq(item.attributes.length, 2);
+        assertEq(item.attributes[0].traitType, "Denomination");
+        assertEq(item.attributes[0].value, "100");
+        assertEq(item.attributes[1].traitType, "Token");
+        assertEq(item.attributes[1].value, "COLL");
+    }
+
+    function testCollectionMultipleMints() public {
+        // Deploy
+        testCollectionDeployedOnTokenDeploy();
+
+        // Get collection
+        address collectionAddr = fixedDenominationManager.getCollectionAddress(DEPLOY_TX_HASH);
+        ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionAddr);
+
+        // Mint note #1 as Bob
+        string memory mintContent1 = 'data:,{"p":"erc-20","op":"mint","tick":"COLL","id":"1","amt":"100"}';
+        ERC20FixedDenominationManager.MintOperation memory mintOp1 = ERC20FixedDenominationManager.MintOperation({
+            tick: "COLL",
+            id: 1,
+            amount: 100
+        });
+        Ethscriptions.CreateEthscriptionParams memory mintParams1 = createTokenParams(
+            MINT_TX_HASH_1,
+            bob,
+            mintContent1,
+            CANONICAL_PROTOCOL,
+            "mint",
+            abi.encode(mintOp1)
+        );
+        vm.prank(bob);
+        ethscriptions.createEthscription(mintParams1);
+
+        // Mint note #2 as Charlie
+        string memory mintContent2 = 'data:,{"p":"erc-20","op":"mint","tick":"COLL","id":"2","amt":"100"}';
+        ERC20FixedDenominationManager.MintOperation memory mintOp2 = ERC20FixedDenominationManager.MintOperation({
+            tick: "COLL",
+            id: 2,
+            amount: 100
+        });
+        Ethscriptions.CreateEthscriptionParams memory mintParams2 = createTokenParams(
+            MINT_TX_HASH_2,
+            charlie,
+            mintContent2,
+            CANONICAL_PROTOCOL,
+            "mint",
+            abi.encode(mintOp2)
+        );
+        vm.prank(charlie);
+        ethscriptions.createEthscription(mintParams2);
+
+        // Verify both collection NFTs exist with correct owners
+        assertEq(collection.ownerOf(1), bob, "Bob should own collection token #1");
+        assertEq(collection.ownerOf(2), charlie, "Charlie should own collection token #2");
+        assertEq(collection.totalSupply(), 2, "Collection should have 2 NFTs");
+
+        // Verify both have correct ERC-20 balances
+        address tokenAddr = fixedDenominationManager.getTokenAddressByTick("COLL");
+        ERC20FixedDenomination token = ERC20FixedDenomination(tokenAddr);
+        assertEq(token.balanceOf(bob), 100 ether);
+        assertEq(token.balanceOf(charlie), 100 ether);
     }
 }

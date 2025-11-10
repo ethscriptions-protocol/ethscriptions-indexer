@@ -10,8 +10,9 @@ class ProtocolEventReader
 
     # ERC20FixedDenominationManager.sol events
     'ERC20FixedDenominationTokenDeployed' => 'ERC20FixedDenominationTokenDeployed(bytes32,address,string,uint256,uint256)',
-    'ERC20FixedDenominationTokenMinted' => 'ERC20FixedDenominationTokenMinted(bytes32,address,uint256,bytes32)',
-    'ERC20FixedDenominationTokenTransferred' => 'ERC20FixedDenominationTokenTransferred(bytes32,address,address,uint256,bytes32)',
+    'ERC20FixedDenominationTokenMinted' => 'ERC20FixedDenominationTokenMinted(bytes32,address,uint256,uint256,bytes32)',
+    'ERC20FixedDenominationTokenTransferred' => 'ERC20FixedDenominationTokenTransferred(bytes32,address,address,uint256,uint256,bytes32)',
+    'ERC721CollectionDeployed' => 'ERC721CollectionDeployed(bytes32,address,string)',
 
     # CollectionsManager.sol events
     # CollectionsManager.sol events (match actual signatures)
@@ -66,6 +67,8 @@ class ProtocolEventReader
       parse_erc20_fixed_denomination_token_minted(log)
     when 'ERC20FixedDenominationTokenTransferred', 'FixedFungibleTokenTransferred'
       parse_erc20_fixed_denomination_token_transferred(log)
+    when 'ERC721CollectionDeployed'
+      parse_erc721_collection_deployed(log)
     when 'CollectionCreated'
       parse_collection_created(log)
     when 'ItemsAdded'
@@ -161,7 +164,7 @@ class ProtocolEventReader
       reason_bytes = decoded[1]
       reason = if reason_bytes && reason_bytes.length > 0
         # Try to decode as Error(string)
-        if reason_bytes.start_with?("\x08\xC3y\xA0")  # Error(string) selector
+        if reason_bytes.start_with?("\x08\xC3y\xA0".b)  # Error(string) selector
           # Skip the selector (4 bytes) and decode the string
           begin
             Eth::Abi.decode(['string'], reason_bytes[4..-1])[0]
@@ -223,19 +226,20 @@ class ProtocolEventReader
   end
 
   def self.parse_erc20_fixed_denomination_token_minted(log)
-    # ERC20FixedDenominationTokenMinted(bytes32 indexed deployTxHash, address indexed to, uint256 amount, bytes32 ethscriptionTxHash)
+    # ERC20FixedDenominationTokenMinted(bytes32 indexed deployEthscriptionId, address indexed to, uint256 amount, uint256 mintId, bytes32 ethscriptionId)
     deploy_tx_hash = log['topics'][1]
     to_address = '0x' + log['topics'][2][-40..] if log['topics'][2]  # Last 20 bytes
 
     data = [log['data'].delete_prefix('0x')].pack('H*')
-    decoded = Eth::Abi.decode(['uint256', 'bytes32'], data)
+    decoded = Eth::Abi.decode(['uint256', 'uint256', 'bytes32'], data)
 
     {
       event: 'ERC20FixedDenominationTokenMinted',
       deploy_tx_hash: deploy_tx_hash,
       to: to_address,
       amount: decoded[0],
-      ethscription_tx_hash: '0x' + decoded[1].unpack1('H*')
+      mint_id: decoded[1],
+      ethscription_tx_hash: '0x' + decoded[2].unpack1('H*')
     }
   rescue => e
     Rails.logger.error "Failed to parse ERC20FixedDenominationTokenMinted: #{e.message}"
@@ -243,13 +247,13 @@ class ProtocolEventReader
   end
 
   def self.parse_erc20_fixed_denomination_token_transferred(log)
-    # ERC20FixedDenominationTokenTransferred(bytes32 indexed deployTxHash, address indexed from, address indexed to, uint256 amount, bytes32 ethscriptionTxHash)
+    # ERC20FixedDenominationTokenTransferred(bytes32 indexed deployEthscriptionId, address indexed from, address indexed to, uint256 amount, uint256 mintId, bytes32 ethscriptionId)
     deploy_tx_hash = log['topics'][1]
     from_address = '0x' + log['topics'][2][-40..] if log['topics'][2]  # Last 20 bytes
     to_address = '0x' + log['topics'][3][-40..] if log['topics'][3]
 
     data = [log['data'].delete_prefix('0x')].pack('H*')
-    decoded = Eth::Abi.decode(['uint256', 'bytes32'], data)
+    decoded = Eth::Abi.decode(['uint256', 'uint256', 'bytes32'], data)
 
     {
       event: 'ERC20FixedDenominationTokenTransferred',
@@ -257,10 +261,30 @@ class ProtocolEventReader
       from: from_address,
       to: to_address,
       amount: decoded[0],
-      ethscription_tx_hash: '0x' + decoded[1].unpack1('H*')
+      mint_id: decoded[1],
+      ethscription_tx_hash: '0x' + decoded[2].unpack1('H*')
     }
   rescue => e
     Rails.logger.error "Failed to parse ERC20FixedDenominationTokenTransferred: #{e.message}"
+    nil
+  end
+
+  def self.parse_erc721_collection_deployed(log)
+    # ERC721CollectionDeployed(bytes32 indexed deployEthscriptionId, address indexed collectionAddress, string tick)
+    deploy_ethscription_id = log['topics'][1]
+    collection_address = '0x' + log['topics'][2][-40..] if log['topics'][2]  # Last 20 bytes
+
+    data = [log['data'].delete_prefix('0x')].pack('H*')
+    decoded = Eth::Abi.decode(['string'], data)
+
+    {
+      event: 'ERC721CollectionDeployed',
+      deploy_ethscription_id: deploy_ethscription_id,
+      collection_address: collection_address,
+      tick: decoded[0]
+    }
+  rescue => e
+    Rails.logger.error "Failed to parse ERC721CollectionDeployed: #{e.message}"
     nil
   end
 

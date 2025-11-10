@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Erc721EthscriptionsCollectionParser do
-  describe '#extract' do
+  describe 'via ProtocolParser' do
     let(:default_params) { [''.b, ''.b, ''.b] }
     let(:zero_merkle_root) { '0x' + '0' * 64 }
 
@@ -9,25 +9,25 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       # @generic-compatible
       it 'requires data:, prefix' do
         json = '{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"0x' + 'a' * 64 + '"}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
         expect(result).to eq(default_params)
       end
 
       # @generic-compatible
       it 'requires valid JSON' do
-        result = described_class.extract('data:,{invalid json}')
+        result = ProtocolParser.for_calldata('data:,{invalid json}')
         expect(result).to eq(default_params)
       end
 
       it 'requires p:erc-721-ethscriptions-collection' do
         json = 'data:,{"p":"other","op":"lock_collection","collection_id":"0x' + 'a' * 64 + '"}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
         expect(result).to eq(default_params)
       end
 
       it 'requires known operation' do
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"unknown_op","collection_id":"0x' + 'a' * 64 + '"}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
         expect(result).to eq(default_params)
       end
 
@@ -35,15 +35,15 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       it 'enforces exact key order with p and op first' do
         # Wrong order - op before p
         json1 = 'data:,{"op":"lock_collection","p":"erc-721-ethscriptions-collection","collection_id":"0x' + 'a' * 64 + '"}'
-        expect(described_class.extract(json1)).to eq(default_params)
+        expect(ProtocolParser.for_calldata(json1)).to eq(default_params)
 
         # Wrong order - collection_id before op
         json2 = 'data:,{"p":"erc-721-ethscriptions-collection","collection_id":"0x' + 'a' * 64 + '","op":"lock_collection"}'
-        expect(described_class.extract(json2)).to eq(default_params)
+        expect(ProtocolParser.for_calldata(json2)).to eq(default_params)
 
         # Correct order
         json3 = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"0x' + 'a' * 64 + '"}'
-        result = described_class.extract(json3)
+        result = ProtocolParser.for_calldata(json3)
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('lock_collection'.b)
       end
@@ -51,7 +51,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       # @generic-compatible
       it 'rejects extra keys' do
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"0x' + 'a' * 64 + '","extra":"field"}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
         expect(result).to eq(default_params)
       end
 
@@ -59,12 +59,12 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       it 'validates uint256 format - no leading zeros' do
         # Valid
       valid_json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"1000","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
-        result = described_class.extract(valid_json)
+        result = ProtocolParser.for_calldata(valid_json)
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
 
         # Invalid - leading zero
       invalid_json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"01000","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
-        result = described_class.extract(invalid_json)
+        result = ProtocolParser.for_calldata(invalid_json)
         expect(result).to eq(default_params)
       end
 
@@ -72,22 +72,22 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       it 'validates bytes32 format - lowercase hex only' do
         # Valid lowercase
         valid_json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"0x' + 'a' * 64 + '"}'
-        result = described_class.extract(valid_json)
+        result = ProtocolParser.for_calldata(valid_json)
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
 
         # Invalid - uppercase
         invalid_json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"0x' + 'A' * 64 + '"}'
-        result = described_class.extract(invalid_json)
+        result = ProtocolParser.for_calldata(invalid_json)
         expect(result).to eq(default_params)
 
         # Invalid - wrong length
         invalid_json2 = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"0x' + 'a' * 63 + '"}'
-        result = described_class.extract(invalid_json2)
+        result = ProtocolParser.for_calldata(invalid_json2)
         expect(result).to eq(default_params)
 
         # Invalid - no 0x prefix
         invalid_json3 = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"' + 'a' * 64 + '"}'
-        result = described_class.extract(invalid_json3)
+        result = ProtocolParser.for_calldata(invalid_json3)
         expect(result).to eq(default_params)
       end
     end
@@ -98,7 +98,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       end
 
       it 'encodes create_collection correctly' do
-        result = described_class.extract(valid_create_json)
+        result = ProtocolParser.for_calldata(valid_create_json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('create_collection'.b)
@@ -124,7 +124,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
       it 'handles empty optional fields' do
         json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"100","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('create_collection'.b)
@@ -146,10 +146,10 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         too_large = (2**256).to_s  # One more than max
 
         json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"#{too_large}","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         # Should return default params due to validation failure
-        expect(result).to eq(described_class::DEFAULT_PARAMS)
+        expect(result).to eq(default_params)
       end
 
       it 'accepts maximum valid uint256 value' do
@@ -157,7 +157,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         max_uint256 = (2**256 - 1).to_s
 
         json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TST","max_supply":"#{max_uint256}","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         # Should succeed with max value
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
@@ -180,55 +180,56 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       it 'encodes add_self_to_collection correctly' do
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"#FF0000","description":"First item","attributes":[{"trait_type":"Rarity","value":"Common"},{"trait_type":"Level","value":"1"}],"merkle_proof":[]}}'
 
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('add_self_to_collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[]))'],
+          ['(bytes32,(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'],
           result[2]
         )[0]
 
         expect(decoded[0].unpack1('H*')).to eq(collection_id_hex[2..])
 
         item = decoded[1]
-        expect(item[0]).to eq(0) # item_index
-        expect(item[1]).to eq('Item 1') # name
-        expect(item[2]).to eq('#FF0000') # background_color
-        expect(item[3]).to eq('First item') # description
-        expect(item[4]).to eq([["Rarity", "Common"], ["Level", "1"]]) # attributes
-        expect(item[5]).to eq([]) # merkle_proof
+        # Note: Item structure now has contentHash as first field
+        expect(item[1]).to eq(0) # item_index
+        expect(item[2]).to eq('Item 1') # name
+        expect(item[3]).to eq('#FF0000') # background_color
+        expect(item[4]).to eq('First item') # description
+        expect(item[5]).to eq([["Rarity", "Common"], ["Level", "1"]]) # attributes
+        expect(item[6]).to eq([]) # merkle_proof
       end
 
       it 'validates attribute key order' do
         # Wrong key order in attributes (value before trait_type)
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"#FF0000","description":"First item","attributes":[{"value":"Common","trait_type":"Rarity"}],"merkle_proof":[]}}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
         expect(result).to eq(default_params)
       end
 
       it 'handles empty attributes array' do
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self_to_collection","collection_id":"' + collection_id_hex + '","item":{"item_index":"0","name":"Item 1","background_color":"","description":"","attributes":[],"merkle_proof":[]}}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(bytes32,(uint256,string,string,string,(string,string)[],bytes32[]))'],
+          ['(bytes32,(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'],
           result[2]
         )[0]
 
         item = decoded[1]
-        expect(item[4]).to eq([]) # Empty attributes
-        expect(item[5]).to eq([]) # Empty merkle_proof
+        expect(item[5]).to eq([]) # Empty attributes
+        expect(item[6]).to eq([]) # Empty merkle_proof
       end
     end
 
     describe 'remove_items operation' do
       it 'encodes remove_items correctly' do
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"remove_items","collection_id":"0x' + '1' * 64 + '","ethscription_ids":["0x' + '2' * 64 + '","0x' + '3' * 64 + '"]}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('remove_items'.b)
@@ -244,7 +245,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
     describe 'edit_collection operation' do
       it 'encodes edit_collection correctly' do
         json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"edit_collection","collection_id":"0x#{"1" * 64}","description":"Updated","logo_image_uri":"new_logo","banner_image_uri":"","background_color":"#00FF00","website_link":"https://new.com","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('edit_collection'.b)
@@ -267,7 +268,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
     describe 'edit_collection_item operation' do
       it 'encodes edit_collection_item correctly' do
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"edit_collection_item","collection_id":"0x' + '1' * 64 + '","item_index":"5","name":"Updated Name","background_color":"#0000FF","description":"Updated desc","attributes":[{"trait_type":"New","value":"Value"}]}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('edit_collection_item'.b)
@@ -289,7 +290,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
     describe 'lock_collection operation' do
       it 'encodes lock_collection as single bytes32' do
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection","collection_id":"0x' + '1' * 64 + '"}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
 
         expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
         expect(result[1]).to eq('lock_collection'.b)
@@ -317,7 +318,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         ]
 
         test_cases.each do |test_case|
-          result = described_class.extract(test_case[:json])
+          result = ProtocolParser.for_calldata(test_case[:json])
           expect(result[0]).not_to eq(''.b)
 
           decoded = Eth::Abi.decode([test_case[:abi_type]], result[2])
@@ -338,13 +339,14 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         test_cases = [
           'data:,{broken json',
           'data:,',
-          'data:,null',
+          # Note: 'data:,null' is a valid word-domains registration for the word "null"
+          # so it's excluded from this test
           'data:,[]',
           'data:,"string"'
         ]
 
         test_cases.each do |json|
-          result = described_class.extract(json)
+          result = ProtocolParser.for_calldata(json)
           expect(result).to eq(default_params)
         end
       end
@@ -352,29 +354,29 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       it 'rejects null values in string fields (no silent coercion)' do
         # Test null in create_collection string fields
         json_with_null = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":null,"symbol":"TEST","max_supply":"100","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
-        result = described_class.extract(json_with_null)
+        result = ProtocolParser.for_calldata(json_with_null)
         expect(result).to eq(default_params)
 
         # Test null in description field
         json_with_null_desc = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"Test","symbol":"TEST","max_supply":"100","description":null,"logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
-        result = described_class.extract(json_with_null_desc)
+        result = ProtocolParser.for_calldata(json_with_null_desc)
         expect(result).to eq(default_params)
 
         # Test null in item fields
         json_with_null_item = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":null,"ethscription_id":"0x' + '2' * 64 + '","background_color":"","description":"","attributes":[]}]}'
-        result = described_class.extract(json_with_null_item)
+        result = ProtocolParser.for_calldata(json_with_null_item)
         expect(result).to eq(default_params)
 
         # Test null in attribute fields
         json_with_null_attr = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_items_batch","collection_id":"0x' + '1' * 64 + '","items":[{"item_index":"0","name":"Item","ethscription_id":"0x' + '2' * 64 + '","background_color":"","description":"","attributes":[{"trait_type":null,"value":"test"}]}]}'
-        result = described_class.extract(json_with_null_attr)
+        result = ProtocolParser.for_calldata(json_with_null_attr)
         expect(result).to eq(default_params)
       end
 
       it 'returns default params for missing required fields' do
         # Missing collection_id
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection"}'
-        result = described_class.extract(json)
+        result = ProtocolParser.for_calldata(json)
         expect(result).to eq(default_params)
       end
     end

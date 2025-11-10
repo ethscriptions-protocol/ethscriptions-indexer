@@ -41,6 +41,9 @@ library Predeploys {
 
     /// @notice ERC721 Ethscriptions collection manager
     address constant ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER = 0x3300000000000000000000000000000000000006;
+
+    /// @notice Name registry handler for word-domain protocol
+    address constant NAME_REGISTRY = 0x3300000000000000000000000000000000000007;
     
     // ============ Helper Functions ============
     

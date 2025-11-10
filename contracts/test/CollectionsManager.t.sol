@@ -108,8 +108,13 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
             value: "Alice"
         });
 
+        // Define content for the ethscription
+        bytes memory itemContent = bytes("collection and item content");
+        bytes32 itemContentHash = keccak256(itemContent);
+
         ERC721EthscriptionsCollectionManager.ItemData memory itemData =
             ERC721EthscriptionsCollectionManager.ItemData({
+                contentHash: itemContentHash,  // keccak256 of the ethscription content
                 itemIndex: 0,
                 name: "Genesis Item #0",
                 backgroundColor: "#445566",
@@ -128,9 +133,9 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         Ethscriptions.CreateEthscriptionParams memory ethscriptionParams =
             Ethscriptions.CreateEthscriptionParams({
                 ethscriptionId: collectionAndItemId,
-                contentUriSha: sha256(bytes("collection and item content")),
+                contentUriSha: sha256(itemContent),
                 initialOwner: alice,
-                content: bytes("collection and item content"),
+                content: itemContent,
                 mimetype: "text/plain",
                 esip6: false,
                 protocolParams: Ethscriptions.ProtocolParams({
@@ -174,6 +179,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
 
         // Create an ethscription that adds itself to the collection at creation time
         string memory itemContent = 'data:,{"p":"erc-721-ethscriptions-collection","op":"add_self","collection":"0x1234","item":"artwork1"}';
+        bytes32 itemContentHash = keccak256(bytes(itemContent));
 
         // Create item data with attributes
         ERC721EthscriptionsCollectionManager.Attribute[] memory attributes = new ERC721EthscriptionsCollectionManager.Attribute[](3);
@@ -191,6 +197,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         });
 
         ERC721EthscriptionsCollectionManager.ItemData memory itemData = ERC721EthscriptionsCollectionManager.ItemData({
+            contentHash: itemContentHash,  // keccak256 of the ethscription content
             itemIndex: 0,
             name: "Test Item #0",
             backgroundColor: "#0000FF",
@@ -395,8 +402,10 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
             });
 
             string memory itemName = i == 0 ? "Item #0" : i == 1 ? "Item #1" : "Item #2";
+            bytes32 itemContentHash = keccak256(abi.encodePacked("item", i));
 
             ERC721EthscriptionsCollectionManager.ItemData memory itemData = ERC721EthscriptionsCollectionManager.ItemData({
+                contentHash: itemContentHash,
                 itemIndex: uint256(i),
                 name: itemName,
                 backgroundColor: "#000000",
@@ -450,6 +459,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         vm.prank(alice);
 
         string memory imageContent = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+        bytes32 imageContentHash = keccak256(bytes(imageContent));
 
         // Create item data with attributes
         ERC721EthscriptionsCollectionManager.Attribute[] memory attributes = new ERC721EthscriptionsCollectionManager.Attribute[](4);
@@ -471,6 +481,7 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         });
 
         ERC721EthscriptionsCollectionManager.ItemData memory itemData = ERC721EthscriptionsCollectionManager.ItemData({
+            contentHash: imageContentHash,
             itemIndex: 0,
             name: "Ittybit #0000",
             backgroundColor: "#648595",
@@ -595,7 +606,10 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
         attributes[0] = ERC721EthscriptionsCollectionManager.Attribute({traitType: "Hair Color", value: "Brown"});
         attributes[1] = ERC721EthscriptionsCollectionManager.Attribute({traitType: "Hair", value: "Blonde Bob"});
 
+        bytes32 itemContentHash = keccak256(bytes("item content"));
+
         ERC721EthscriptionsCollectionManager.ItemData memory itemData = ERC721EthscriptionsCollectionManager.ItemData({
+            contentHash: itemContentHash,
             itemIndex: 0,
             name: "Test Item #0",
             backgroundColor: "#FF5733",

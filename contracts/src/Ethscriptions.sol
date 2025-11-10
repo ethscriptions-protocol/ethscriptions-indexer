@@ -115,8 +115,8 @@ contract Ethscriptions is ERC721EthscriptionsSequentialEnumerableUpgradeable {
     // =============================================================
 
     /// @dev Maximum page sizes for pagination helpers
-    uint256 private constant MAX_PAGE_WITH_CONTENT = 50;
-    uint256 private constant MAX_PAGE_WITHOUT_CONTENT = 1000;
+    uint256 private constant MAX_PAGE_WITH_CONTENT = 20;
+    uint256 private constant MAX_PAGE_WITHOUT_CONTENT = 50;
 
     // =============================================================
     //                      STATE VARIABLES

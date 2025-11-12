@@ -77,6 +77,8 @@ class ProtocolEventReader
       parse_items_removed(log)
     when 'CollectionEdited'
       parse_collection_edited(log)
+    when 'OwnershipTransferred'
+      parse_collection_ownership_transferred(log)
     else
       {
         event: event_name,
@@ -367,6 +369,15 @@ class ProtocolEventReader
     {
       event: 'CollectionEdited',
       collection_id: log['topics'][1]
+    }
+  end
+
+  def self.parse_collection_ownership_transferred(log)
+    {
+      event: 'OwnershipTransferred',
+      collection_id: log['topics'][1],
+      previous_owner: log['topics'][2] ? '0x' + log['topics'][2][-40..] : nil,
+      new_owner: log['topics'][3] ? '0x' + log['topics'][3][-40..] : nil
     }
   end
 

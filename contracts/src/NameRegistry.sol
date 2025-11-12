@@ -197,7 +197,7 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
         bytes memory json = abi.encodePacked(
             '{"name":"',
             name.escapeJSON(),
-            '","description":"Dotless word domain"',
+            '","description":"An Ethscriptions name"',
             ',"ethscription_id":"',
             ethscriptionIdHex,
             '","ethscription_number":',
@@ -207,9 +207,9 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
             '":"',
             mediaUri,
             '","attributes":[',
-            '{"trait_type":"Name","value":"',
-            name.escapeJSON(),
-            '"}',
+            '{"trait_type":"Length","value":',
+            bytes(name).length.toString(),
+            ',"display_type":"number"}',
             ']}'
         );
 
@@ -223,7 +223,7 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
             'data:application/json;base64,',
             Base64.encode(bytes(
                 '{"name":"Word Domains Registry",'
-                '"description":"On-chain word domain name system for Ethscriptions. Register unique, dotless domain names as NFTs.",'
+                '"description":"On-chain name system for Ethscriptions. Allowed characters: a-z, 0-9, and _ (underscore). Max length: 30 characters.",'
                 '"image":"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNTAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzEwMTAxMCIvPjx0ZXh0IHg9IjI1MCIgeT0iMjUwIiBmb250LXNpemU9IjgwIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMDBmZjAwIj5bTkFNRVNdPC90ZXh0Pjwvc3ZnPg==",'
                 '"external_link":"https://ethscriptions.com"}'
             ))

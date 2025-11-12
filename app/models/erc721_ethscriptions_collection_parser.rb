@@ -508,7 +508,7 @@ class Erc721EthscriptionsCollectionParser
   end
 
   def validate_address(value, field_name)
-    unless value.is_a?(String) && value.match?(/\A0x[0-9a-f]{40}\z/)
+    unless value.is_a?(String) && value.match?(/\A0x[0-9a-f]{40}\z/i)
       raise ValidationError, "Invalid address for #{field_name}: #{value}"
     end
 

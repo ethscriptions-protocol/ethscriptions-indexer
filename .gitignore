@@ -33,3 +33,9 @@
 /config/master.key
 
 .DS_Store
+
+# Ignore uncompressed collection JSON files (keep only the tar.gz archive)
+items_by_ethscription.json
+collections_by_name.json
+# Keep the compressed archive
+# collections_data.tar.gz

@@ -1,3 +1,6 @@
+require 'zlib'
+require 'rubygems/package'
+
 # Strict parser for the ERC-721 Ethscriptions collection protocol with canonical JSON validation
 class Erc721EthscriptionsCollectionParser
   # Default return for invalid input
@@ -125,6 +128,7 @@ class Erc721EthscriptionsCollectionParser
 
   DEFAULT_ITEMS_PATH = ENV['COLLECTIONS_ITEMS_PATH'] || Rails.root.join('items_by_ethscription.json')
   DEFAULT_COLLECTIONS_PATH = ENV['COLLECTIONS_META_PATH'] || Rails.root.join('collections_by_name.json')
+  DEFAULT_ARCHIVE_PATH = ENV['COLLECTIONS_ARCHIVE_PATH'] || Rails.root.join('collections_data.tar.gz')
 
   # New API: validate and encode protocol params
   # Unified interface - accepts all possible parameters, uses what it needs
@@ -264,6 +268,47 @@ class Erc721EthscriptionsCollectionParser
     include Memery
 
     def load_import_data(items_path:, collections_path:)
+      archive_path = DEFAULT_ARCHIVE_PATH
+
+      # Check if we need to extract from the tar.gz archive
+      if File.exist?(archive_path)
+        # Check if JSON files don't exist or archive is newer
+        extract_needed = !File.exist?(items_path) || !File.exist?(collections_path) ||
+                        File.mtime(archive_path) > File.mtime(items_path) ||
+                        File.mtime(archive_path) > File.mtime(collections_path)
+
+        if extract_needed
+          Rails.logger.info "Extracting collections data from #{archive_path}" if defined?(Rails)
+
+          # Extract tar.gz archive
+          Zlib::GzipReader.open(archive_path) do |gz|
+            Gem::Package::TarReader.new(gz) do |tar|
+              tar.each do |entry|
+                if entry.file?
+                  case entry.full_name
+                  when 'items_by_ethscription.json'
+                    File.open(items_path, 'wb') do |f|
+                      f.write(entry.read)
+                    end
+                    Rails.logger.info "Extracted #{entry.full_name} to #{items_path}" if defined?(Rails)
+                  when 'collections_by_name.json'
+                    File.open(collections_path, 'wb') do |f|
+                      f.write(entry.read)
+                    end
+                    Rails.logger.info "Extracted #{entry.full_name} to #{collections_path}" if defined?(Rails)
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+
+      # Ensure files exist before reading
+      unless File.exist?(items_path) && File.exist?(collections_path)
+        raise "Collections data files not found. Please ensure #{archive_path} exists or provide JSON files directly."
+      end
+
       items = JSON.parse(File.read(items_path))
       collections = JSON.parse(File.read(collections_path))
 
@@ -275,7 +320,7 @@ class Erc721EthscriptionsCollectionParser
       items_by_id.each do |iid, it|
         cname = it['collection_name']
         next unless cname.is_a?(String) && !cname.empty?
-        num = it['ethscription_number'].to_i
+        num = it.fetch('ethscription_number').to_i
         groups[cname] << [iid, num]
       end
 

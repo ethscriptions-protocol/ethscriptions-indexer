@@ -60,7 +60,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
     it 'builds create_collection_and_add_self for the leader via import fallback' do
       # Create a mock eth_transaction with from_address
-      mock_tx = double('eth_transaction', from_address: '0x0000000000000000000000000000000000000001')
+      mock_tx = double('eth_transaction', from_address: Address20.from_hex('0x0000000000000000000000000000000000000001'))
 
       protocol, operation, encoded = ProtocolParser.for_calldata(
         'data:,{}',
@@ -71,7 +71,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       expect(operation).to eq('create_collection_and_add_self'.b)
 
       decoded = Eth::Abi.decode([
-        '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'
+        '((string,string,uint256,string,string,string,string,string,string,string,bytes32,address),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'
       ], encoded)[0]
 
       metadata = decoded[0]
@@ -150,7 +150,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       specific_id = '0x05aac415994e0e01e66c4970133a51a4cdcea1f3a967743b87e6eb08f2f4d9f9'
 
       # Create a mock eth_transaction with from_address
-      mock_tx = double('eth_transaction', from_address: '0x0000000000000000000000000000000000000001')
+      mock_tx = double('eth_transaction', from_address: Address20.from_hex('0x0000000000000000000000000000000000000001'))
 
       protocol, operation, encoded = ProtocolParser.for_calldata(
         'data:,{}',
@@ -162,7 +162,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
       # Decode to verify it's properly formed
       decoded = Eth::Abi.decode([
-        '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'
+        '((string,string,uint256,string,string,string,string,string,string,string,bytes32,address),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))'
       ], encoded)[0]
 
       metadata = decoded[0]

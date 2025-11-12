@@ -393,7 +393,7 @@ class Erc721EthscriptionsCollectionParser
       result['initial_owner'] = to_address_hex(meta['initial_owner'])
     elsif eth_transaction && eth_transaction.respond_to?(:from_address)
       # Use the transaction sender as the actual owner
-      result['initial_owner'] = to_address_hex(eth_transaction.from_address)
+      result['initial_owner'] = eth_transaction.from_address.to_hex
     else
       # No transaction context - this shouldn't happen in production
       # For import, we always have the transaction

@@ -78,7 +78,7 @@ RSpec.describe "Ethscription Creation", type: :integration do
       end
 
       it "accepts GZIP input post-ESIP-7" do
-        compressed_data_uri = Zlib.gzip("data:text/plain;charset=utf-8,Hello World")  # Placeholder for GZIP data
+        compressed_data_uri = Zlib.gzip("data:text/plain;charset=utf-8,Hello Worldaaa")  # Placeholder for GZIP data
 
         expect_ethscription_success(
           create_input(

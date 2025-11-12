@@ -105,7 +105,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
 
         # Decode and verify
         decoded = Eth::Abi.decode(
-          ['(string,string,uint256,string,string,string,string,string,string,string,bytes32)'],
+          ['(string,string,uint256,string,string,string,string,string,string,string,bytes32,address)'],
           result[2]
         )[0]
 
@@ -130,7 +130,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         expect(result[1]).to eq('create_collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(string,string,uint256,string,string,string,string,string,string,string,bytes32)'],
+          ['(string,string,uint256,string,string,string,string,string,string,string,bytes32,address)'],
           result[2]
         )[0]
 
@@ -164,7 +164,7 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         expect(result[1]).to eq('create_collection'.b)
 
         decoded = Eth::Abi.decode(
-          ['(string,string,uint256,string,string,string,string,string,string,string,bytes32)'],
+          ['(string,string,uint256,string,string,string,string,string,string,string,bytes32,address)'],
           result[2]
         )[0]
 

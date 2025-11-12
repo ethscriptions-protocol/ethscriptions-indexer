@@ -11,7 +11,7 @@ class ProtocolParser
     'erc-721-ethscriptions-collection' => Erc721EthscriptionsCollectionParser
   }.freeze
 
-  def self.extract(content_uri, ethscription_id: nil)
+  def self.extract(content_uri, eth_transaction: nil, ethscription_id: nil)
     # Parse data URI and extract protocol info
     parsed = parse_data_uri_and_protocol(content_uri)
 
@@ -33,7 +33,8 @@ class ProtocolParser
           operation: nil,
           params: {},
           source: :json,
-          ethscription_id: ethscription_id
+          ethscription_id: ethscription_id,
+          eth_transaction: eth_transaction
         )
 
         if encoded != DEFAULT_PARAMS
@@ -61,7 +62,8 @@ class ProtocolParser
       operation: parsed[:operation],
       params: parsed[:params],
       source: parsed[:source],
-      ethscription_id: ethscription_id
+      ethscription_id: ethscription_id,
+      eth_transaction: eth_transaction
     )
 
     # Check if parsing succeeded
@@ -83,8 +85,10 @@ class ProtocolParser
 
   # Get protocol data formatted for L2 calldata
   # Returns [protocol, operation, encoded_data] for contract consumption
-  def self.for_calldata(content_uri, ethscription_id: nil)
-    result = extract(content_uri, ethscription_id: ethscription_id)
+  def self.for_calldata(content_uri, eth_transaction: nil, ethscription_id: nil)
+    # Support both for backward compatibility
+    ethscription_id ||= eth_transaction&.transaction_hash
+    result = extract(content_uri, eth_transaction: eth_transaction, ethscription_id: ethscription_id)
 
     if result.nil?
       # No protocol detected - return empty protocol params

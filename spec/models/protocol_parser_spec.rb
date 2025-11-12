@@ -57,7 +57,7 @@ RSpec.describe ProtocolParser do
 
     context 'erc-721 collections protocol' do
       it 'parses a create_collection inscription' do
-        content_uri = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"My NFTs","symbol":"MNFT","max_supply":"100","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
+        content_uri = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"My NFTs","symbol":"MNFT","max_supply":"100","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}","initial_owner":"0x0000000000000000000000000000000000000001"})
 
         result = described_class.extract(content_uri)
 
@@ -139,7 +139,7 @@ RSpec.describe ProtocolParser do
     end
 
     it 'returns encoded data for collections protocol' do
-      content_uri = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"My NFTs","symbol":"MNFT","max_supply":"42","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}"})
+      content_uri = %(data:,{"p":"erc-721-ethscriptions-collection","op":"create_collection","name":"My NFTs","symbol":"MNFT","max_supply":"42","description":"","logo_image_uri":"","banner_image_uri":"","background_color":"","website_link":"","twitter_link":"","discord_link":"","merkle_root":"#{zero_merkle_root}","initial_owner":"0x0000000000000000000000000000000000000001"})
 
       protocol, operation, encoded = described_class.for_calldata(content_uri)
 

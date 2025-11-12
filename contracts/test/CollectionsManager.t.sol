@@ -40,7 +40,8 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
                 websiteLink: "https://example.com",
                 twitterLink: "https://twitter.com/test",
                 discordLink: "https://discord.gg/test",
-                merkleRoot: bytes32(0)
+                merkleRoot: bytes32(0),
+                initialOwner: alice  // Use alice as owner
             });
 
         Ethscriptions.CreateEthscriptionParams memory params = Ethscriptions.CreateEthscriptionParams({
@@ -94,7 +95,8 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
                 websiteLink: "https://example.com",
                 twitterLink: "",
                 discordLink: "",
-                merkleRoot: bytes32(0)
+                merkleRoot: bytes32(0),
+                initialOwner: alice  // Use alice as owner
             });
 
         // Prepare item data
@@ -1317,7 +1319,8 @@ contract ERC721EthscriptionsCollectionManagerTest is TestSetup {
                 websiteLink: "",
                 twitterLink: "",
                 discordLink: "",
-                merkleRoot: merkleRoot
+                merkleRoot: merkleRoot,
+                initialOwner: alice  // Use alice as owner
             });
 
         string memory collectionContent =

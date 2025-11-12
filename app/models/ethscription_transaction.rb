@@ -180,10 +180,10 @@ class EthscriptionTransaction < T::Struct
     esip6 = DataUri.esip6?(content_uri) || false
 
     # Extract protocol params - returns [protocol, operation, encoded_data]
-    # Pass the ethscription_id context so parsers can inject it when needed
+    # Pass the eth_transaction for context (includes from_address and transaction_hash)
     protocol, operation, encoded_data = ProtocolParser.for_calldata(
       content_uri,
-      ethscription_id: eth_transaction.transaction_hash
+      eth_transaction: eth_transaction
     )
     
     # Hash the content for protocol uniqueness

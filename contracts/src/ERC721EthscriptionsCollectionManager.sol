@@ -31,6 +31,7 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         string twitterLink;
         string discordLink;
         bytes32 merkleRoot;
+        address initialOwner;
     }
 
     struct CollectionRecord {
@@ -345,21 +346,20 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
 
     // -------------------- Helpers --------------------
 
-    function _createCollection(bytes32 collectionId, CollectionParams memory metadata) internal {
-        require(!collectionExists(collectionId), "Collection already exists");
+    function _initializeCollection(Proxy collectionProxy, bytes32 collectionId, CollectionParams memory metadata) private {
 
-        Proxy collectionProxy = new Proxy{salt: collectionId}(address(this));
-        
         collectionProxy.upgradeToAndCall(collectionsImplementation, abi.encodeWithSelector(
             ERC721EthscriptionsCollection.initialize.selector,
             metadata.name,
             metadata.symbol,
-            ethscriptions.ownerOf(collectionId),
+            metadata.initialOwner,
             collectionId
         ));
-        
-        collectionProxy.changeAdmin(Predeploys.PROXY_ADMIN);
 
+        collectionProxy.changeAdmin(Predeploys.PROXY_ADMIN);
+    }
+
+    function _storeCollectionData(bytes32 collectionId, address collectionContract, CollectionParams memory metadata) private {
         // Store string fields using DedupedBlobStore
         (, bytes32 nameRef) = DedupedBlobStore.storeMemory(bytes(metadata.name), collectionBlobStorage);
         (, bytes32 symbolRef) = DedupedBlobStore.storeMemory(bytes(metadata.symbol), collectionBlobStorage);
@@ -372,7 +372,7 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         (, bytes32 discordLinkRef) = DedupedBlobStore.storeMemory(bytes(metadata.discordLink), collectionBlobStorage);
 
         collectionStore[collectionId] = CollectionRecord({
-            collectionContract: address(collectionProxy),
+            collectionContract: collectionContract,
             locked: false,
             nameRef: nameRef,
             symbolRef: symbolRef,
@@ -386,7 +386,19 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
             discordLinkRef: discordLinkRef,
             merkleRoot: metadata.merkleRoot
         });
-        
+    }
+
+    function _createCollection(bytes32 collectionId, CollectionParams memory metadata) internal {
+        require(!collectionExists(collectionId), "Collection already exists");
+
+        Proxy collectionProxy = new Proxy{salt: collectionId}(address(this));
+
+        // Initialize the collection
+        _initializeCollection(collectionProxy, collectionId, metadata);
+
+        // Store collection metadata
+        _storeCollectionData(collectionId, address(collectionProxy), metadata);
+
         collectionAddressToId[address(collectionProxy)] = collectionId;
         collectionIds.push(collectionId);
 

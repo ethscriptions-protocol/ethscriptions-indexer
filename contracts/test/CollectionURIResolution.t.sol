@@ -170,7 +170,8 @@ contract CollectionURIResolutionTest is TestSetup {
                 websiteLink: "",
                 twitterLink: "",
                 discordLink: "",
-                merkleRoot: bytes32(0)
+                merkleRoot: bytes32(0),
+                initialOwner: alice  // Use alice as owner
             });
 
         string memory collectionContent = string.concat(

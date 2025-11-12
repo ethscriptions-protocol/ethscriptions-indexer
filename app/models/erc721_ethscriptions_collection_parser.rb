@@ -12,8 +12,8 @@ class Erc721EthscriptionsCollectionParser
   # Operation schemas defining exact structure and ABI encoding
   OPERATION_SCHEMAS = {
     'create_collection' => {
-      keys: %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link merkle_root],
-      abi_type: '(string,string,uint256,string,string,string,string,string,string,string,bytes32)',
+      keys: %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link merkle_root initial_owner],
+      abi_type: '(string,string,uint256,string,string,string,string,string,string,string,bytes32,address)',
       validators: {
         'name' => :string,
         'symbol' => :string,
@@ -25,14 +25,15 @@ class Erc721EthscriptionsCollectionParser
         'website_link' => :string,
         'twitter_link' => :string,
         'discord_link' => :string,
-        'merkle_root' => :bytes32
+        'merkle_root' => :bytes32,
+        'initial_owner' => :optional_address
       }
     },
     # New combined create op name used by the contract; keep legacy alias below
     'create_collection_and_add_self' => {
       keys: %w[metadata item],
-      # ((CollectionParams),(ItemData)) - ItemData now includes contentHash as first field
-      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))',
+      # ((CollectionParams),(ItemData)) - CollectionParams now includes initialOwner
+      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32,address),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'metadata' => :collection_metadata,
         'item' => :single_item
@@ -41,7 +42,7 @@ class Erc721EthscriptionsCollectionParser
     # Legacy alias retained for backwards compatibility
     'create_and_add_self' => {
       keys: %w[metadata item],
-      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))',
+      abi_type: '((string,string,uint256,string,string,string,string,string,string,string,bytes32,address),(bytes32,uint256,string,string,string,(string,string)[],bytes32[]))',
       validators: {
         'metadata' => :collection_metadata,
         'item' => :single_item
@@ -132,21 +133,22 @@ class Erc721EthscriptionsCollectionParser
 
   # New API: validate and encode protocol params
   # Unified interface - accepts all possible parameters, uses what it needs
-  def self.validate_and_encode(decoded_content:, operation:, params:, source:, ethscription_id: nil, **_extras)
+  def self.validate_and_encode(decoded_content:, operation:, params:, source:, ethscription_id: nil, eth_transaction: nil, **_extras)
     new.validate_and_encode(
       decoded_content: decoded_content,
       operation: operation,
       params: params,
       source: source,
-      ethscription_id: ethscription_id
+      ethscription_id: ethscription_id,
+      eth_transaction: eth_transaction
     )
   end
 
-  def validate_and_encode(decoded_content:, operation:, params:, source:, ethscription_id: nil)
+  def validate_and_encode(decoded_content:, operation:, params:, source:, ethscription_id: nil, eth_transaction: nil)
     # Check import fallback first (if ethscription_id provided)
     if ethscription_id
       normalized_id = normalize_id(ethscription_id)
-      if normalized_id && (preplanned = build_import_encoded_params(normalized_id, decoded_content))
+      if normalized_id && (preplanned = build_import_encoded_params(normalized_id, decoded_content, eth_transaction))
         return preplanned
       end
     end
@@ -217,7 +219,7 @@ class Erc721EthscriptionsCollectionParser
   # -------------------- Import fallback --------------------
 
   # Returns [protocol, operation, encoded_data] or nil
-  def build_import_encoded_params(id, decoded_content)
+  def build_import_encoded_params(id, decoded_content, eth_transaction = nil)
     data = self.class.load_import_data(
       items_path: DEFAULT_ITEMS_PATH,
       collections_path: DEFAULT_COLLECTIONS_PATH
@@ -247,7 +249,7 @@ class Erc721EthscriptionsCollectionParser
       operation = 'create_collection_and_add_self'
       schema = OPERATION_SCHEMAS[operation]
       encoding_data = {
-        'metadata' => build_metadata_object(metadata),
+        'metadata' => build_metadata_object(metadata, eth_transaction: eth_transaction),
         'item' => build_item_object(item: item, item_index: item_index, content_hash: content_hash)
       }
       encoded_data = encode_operation(operation, encoding_data, schema, content_hash: content_hash)
@@ -355,7 +357,7 @@ class Erc721EthscriptionsCollectionParser
   end
 
   # Build ordered JSON objects to match strict parser expectations
-  def build_metadata_object(meta)
+  def build_metadata_object(meta, eth_transaction: nil)
     name = safe_string(meta['name'])
     symbol = safe_string(meta['symbol'] || meta['slug'] || meta['name'])
     max_supply = safe_uint_string(meta['max_supply'] || meta['total_supply'] || 0)
@@ -381,6 +383,24 @@ class Erc721EthscriptionsCollectionParser
     ]
     merkle_root = meta.fetch('merkle_root')
     result['merkle_root'] = to_bytes32_hex(merkle_root)
+
+    # Handle initial_owner based on should_renounce flag
+    if meta['should_renounce'] == true
+      # address(0) means renounce ownership
+      result['initial_owner'] = '0x0000000000000000000000000000000000000000'
+    elsif meta['initial_owner']
+      # Use explicitly specified initial owner
+      result['initial_owner'] = to_address_hex(meta['initial_owner'])
+    elsif eth_transaction && eth_transaction.respond_to?(:from_address)
+      # Use the transaction sender as the actual owner
+      result['initial_owner'] = to_address_hex(eth_transaction.from_address)
+    else
+      # No transaction context - this shouldn't happen in production
+      # For import, we always have the transaction
+      # Return nil to indicate we can't determine the owner
+      raise ValidationError, "Cannot determine initial owner without transaction context"
+    end
+
     result
   end
 
@@ -405,6 +425,12 @@ class Erc721EthscriptionsCollectionParser
   def to_bytes32_hex(val)
     h = safe_string(val).downcase
     raise ValidationError, "Invalid bytes32 hex: #{val}" unless h.match?(/\A0x[0-9a-f]{64}\z/)
+    h
+  end
+
+  def to_address_hex(val)
+    h = safe_string(val).downcase
+    raise ValidationError, "Invalid address hex: #{val}" unless h.match?(/\A0x[0-9a-f]{40}\z/)
     h
   end
 
@@ -564,6 +590,14 @@ class Erc721EthscriptionsCollectionParser
     value.downcase
   end
 
+  def validate_optional_address(value, field_name)
+    unless value.is_a?(String) && value.match?(/\A0x[0-9a-f]{40}\z/i)
+      raise ValidationError, "Invalid address for #{field_name}: #{value}"
+    end
+    # Allow address(0) for renouncement
+    value.downcase
+  end
+
   def validate_bytes32_array(value, field_name)
     unless value.is_a?(Array)
       raise ValidationError, "Expected array for #{field_name}"
@@ -598,8 +632,8 @@ class Erc721EthscriptionsCollectionParser
     unless value.is_a?(Hash)
       raise ValidationError, "Expected object for #{field_name}"
     end
-    # Expected keys for metadata (merkle_root optional)
-    expected_keys = %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link merkle_root]
+    # Expected keys for metadata (now includes initial_owner)
+    expected_keys = %w[name symbol max_supply description logo_image_uri banner_image_uri background_color website_link twitter_link discord_link merkle_root initial_owner]
     unless value.keys == expected_keys
       raise ValidationError, "Invalid metadata keys or order"
     end
@@ -615,7 +649,8 @@ class Erc721EthscriptionsCollectionParser
       websiteLink: validate_string(value['website_link'], 'website_link'),
       twitterLink: validate_string(value['twitter_link'], 'twitter_link'),
       discordLink: validate_string(value['discord_link'], 'discord_link'),
-      merkleRoot: validate_bytes32(value['merkle_root'], 'merkle_root')
+      merkleRoot: validate_bytes32(value['merkle_root'], 'merkle_root'),
+      initialOwner: validate_optional_address(value['initial_owner'], 'initial_owner')
     }
   end
 
@@ -681,7 +716,8 @@ class Erc721EthscriptionsCollectionParser
       data['website_link'],
       data['twitter_link'],
       data['discord_link'],
-      data['merkle_root']
+      data['merkle_root'],
+      data['initial_owner']
     ]
   end
 
@@ -689,7 +725,7 @@ class Erc721EthscriptionsCollectionParser
     meta = data['metadata']
     item = data['item']
 
-    # Metadata tuple with optional merkleRoot
+    # Metadata tuple with merkleRoot and initialOwner
     merkle_root = meta[:merkleRoot] || ["".ljust(64, '0')].pack('H*')
     metadata_tuple = [
       meta[:name],
@@ -702,7 +738,8 @@ class Erc721EthscriptionsCollectionParser
       meta[:websiteLink],
       meta[:twitterLink],
       meta[:discordLink],
-      merkle_root
+      merkle_root,
+      meta[:initialOwner]
     ]
 
     # Item tuple - contentHash comes first (keccak256 of ethscription content)

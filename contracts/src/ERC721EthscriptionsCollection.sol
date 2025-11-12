@@ -45,7 +45,14 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
         bytes32 collectionId_
     ) external initializer {
         __ERC721_init(name_, symbol_);
-        __Ownable_init(initialOwner_);
+        
+        if (initialOwner_ == address(0)) {
+            __Ownable_init(address(1));
+            _transferOwnership(address(0));
+        } else {
+            __Ownable_init(initialOwner_);
+        }
+        
         manager = ERC721EthscriptionsCollectionManager(msg.sender);
         collectionId = collectionId_;
     }

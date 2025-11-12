@@ -94,7 +94,8 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
         "website_link" => "",
         "twitter_link" => "",
         "discord_link" => "",
-        "merkle_root" => zero_merkle_root
+        "merkle_root" => zero_merkle_root,
+        "initial_owner" => alice
       }
 
       tx_spec = create_input(
@@ -179,7 +180,8 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
         "website_link" => "",
         "twitter_link" => "",
         "discord_link" => "",
-        "merkle_root" => zero_merkle_root
+        "merkle_root" => zero_merkle_root,
+        "initial_owner" => alice
       }
 
       # Create collection using the same pattern as the first test
@@ -329,7 +331,8 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
         "website_link" => "",
         "twitter_link" => "",
         "discord_link" => "",
-        "merkle_root" => owner_merkle_root
+        "merkle_root" => owner_merkle_root,
+        "initial_owner" => alice
       }
 
       collection_spec = create_input(
@@ -397,7 +400,8 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
         "website_link" => "",
         "twitter_link" => "",
         "discord_link" => "",
-        "merkle_root" => initial_merkle_root
+        "merkle_root" => initial_merkle_root,
+        "initial_owner" => alice
       }
 
       collection_spec = create_input(

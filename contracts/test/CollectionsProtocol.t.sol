@@ -25,7 +25,8 @@ contract CollectionsProtocolTest is TestSetup {
                 websiteLink: "",
                 twitterLink: "",
                 discordLink: "",
-                merkleRoot: bytes32(0)
+                merkleRoot: bytes32(0),
+                initialOwner: alice  // Use alice as owner
             });
 
         bytes memory encodedMetadata = abi.encode(metadata);
@@ -92,7 +93,8 @@ contract CollectionsProtocolTest is TestSetup {
                 websiteLink: "",
                 twitterLink: "",
                 discordLink: "",
-                merkleRoot: bytes32(0)
+                merkleRoot: bytes32(0),
+                initialOwner: alice  // Use alice as owner
             });
 
         bytes memory encodedProtocolData = abi.encode(metadata);
@@ -154,7 +156,8 @@ contract CollectionsProtocolTest is TestSetup {
                 websiteLink: "",
                 twitterLink: "",
                 discordLink: "",
-                merkleRoot: bytes32(0)
+                merkleRoot: bytes32(0),
+                initialOwner: alice  // Use alice as owner
             });
 
         bytes32 txHash = keccak256("call_test_tx");

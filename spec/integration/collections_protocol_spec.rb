@@ -213,7 +213,8 @@ RSpec.describe "Collections Protocol", type: :integration do
         "website_link" => "",
         "twitter_link" => "",
         "discord_link" => "",
-        "merkle_root" => zero_merkle_root
+        "merkle_root" => zero_merkle_root,
+        "initial_owner" => alice
       }
 
       creation = expect_ethscription_success(
@@ -261,7 +262,8 @@ RSpec.describe "Collections Protocol", type: :integration do
         "website_link" => "",
         "twitter_link" => "",
         "discord_link" => "",
-        "merkle_root" => zero_merkle_root
+        "merkle_root" => zero_merkle_root,
+        "initial_owner" => alice
       }
 
       creation = expect_ethscription_success(
@@ -300,7 +302,8 @@ RSpec.describe "Collections Protocol", type: :integration do
         "website_link" => "",
         "twitter_link" => "",
         "discord_link" => "",
-        "merkle_root" => zero_merkle_root
+        "merkle_root" => zero_merkle_root,
+        "initial_owner" => alice
       }
 
       creation = expect_ethscription_success(
@@ -438,7 +441,8 @@ RSpec.describe "Collections Protocol", type: :integration do
         "website_link" => "",
         "twitter_link" => "",
         "discord_link" => "",
-        "merkle_root" => zero_merkle_root
+        "merkle_root" => zero_merkle_root,
+        "initial_owner" => alice
       }
       
       expect_ethscription_success(

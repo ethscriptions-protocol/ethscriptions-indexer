@@ -73,7 +73,8 @@ contract AddressPredictionTest is TestSetup {
                 websiteLink: "https://example.com",
                 twitterLink: "",
                 discordLink: "",
-                merkleRoot: bytes32(0)
+                merkleRoot: bytes32(0),
+                initialOwner: address(this)  // Use test contract as owner
             });
 
         // Manually compute predicted proxy address

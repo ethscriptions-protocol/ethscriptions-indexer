@@ -199,21 +199,150 @@ RSpec.describe "Collections Protocol", type: :integration do
       )
     end
 
-    it "transfers collection ownership" do
+    it "transfers collection ownership explicitly" do
+      collection_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "create_collection",
+        "name" => "Ownership Test",
+        "symbol" => "OWN",
+        "max_supply" => "10",
+        "description" => "",
+        "logo_image_uri" => "",
+        "banner_image_uri" => "",
+        "background_color" => "",
+        "website_link" => "",
+        "twitter_link" => "",
+        "discord_link" => "",
+        "merkle_root" => zero_merkle_root
+      }
+
+      creation = expect_ethscription_success(
+        create_input(
+          creator: alice,
+          to: alice,
+          data_uri: "data:," + collection_data.to_json
+        )
+      )
+
+      created_collection_id = creation[:ethscription_ids].first
+      initial_owner = CollectionsReader.get_collection_owner(created_collection_id)
+      expect(initial_owner.downcase).to eq(alice.downcase)
+
       transfer_data = {
         "p" => "erc-721-ethscriptions-collection",
         "op" => "transfer_ownership",
-        "collection_id" => collection_id,
+        "collection_id" => created_collection_id,
         "new_owner" => bob
       }
 
       expect_ethscription_success(
         create_input(
           creator: alice,
-          to: dummy_recipient,
+          to: alice,
           data_uri: "data:," + transfer_data.to_json
         )
       )
+
+      updated_owner = CollectionsReader.get_collection_owner(created_collection_id)
+      expect(updated_owner.downcase).to eq(bob.downcase)
+    end
+
+    it "keeps ownership unchanged when the collection leader ethscription transfers" do
+      collection_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "create_collection",
+        "name" => "Leader Transfer",
+        "symbol" => "LEAD",
+        "max_supply" => "5",
+        "description" => "",
+        "logo_image_uri" => "",
+        "banner_image_uri" => "",
+        "background_color" => "",
+        "website_link" => "",
+        "twitter_link" => "",
+        "discord_link" => "",
+        "merkle_root" => zero_merkle_root
+      }
+
+      creation = expect_ethscription_success(
+        create_input(
+          creator: alice,
+          to: alice,
+          data_uri: "data:," + collection_data.to_json
+        )
+      )
+
+      created_collection_id = creation[:ethscription_ids].first
+      expect(CollectionsReader.get_collection_owner(created_collection_id).downcase).to eq(alice.downcase)
+
+      expect_transfer_success(
+        transfer_input(from: alice, to: bob, id: created_collection_id),
+        created_collection_id,
+        bob
+      )
+
+      # Collection owner stays Alice despite the ethscription transfer
+      current_owner = CollectionsReader.get_collection_owner(created_collection_id)
+      expect(current_owner.downcase).to eq(alice.downcase)
+    end
+
+    it "renounces ownership even when locked" do
+      collection_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "create_collection",
+        "name" => "Renounce Test",
+        "symbol" => "REN",
+        "max_supply" => "25",
+        "description" => "",
+        "logo_image_uri" => "",
+        "banner_image_uri" => "",
+        "background_color" => "",
+        "website_link" => "",
+        "twitter_link" => "",
+        "discord_link" => "",
+        "merkle_root" => zero_merkle_root
+      }
+
+      creation = expect_ethscription_success(
+        create_input(
+          creator: alice,
+          to: alice,
+          data_uri: "data:," + collection_data.to_json
+        )
+      )
+
+      created_collection_id = creation[:ethscription_ids].first
+
+      lock_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "lock_collection",
+        "collection_id" => created_collection_id
+      }
+
+      expect_ethscription_success(
+        create_input(
+          creator: alice,
+          to: alice,
+          data_uri: "data:," + lock_data.to_json
+        )
+      )
+
+      renounce_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "renounce_ownership",
+        "collection_id" => created_collection_id
+      }
+
+      expect_ethscription_success(
+        create_input(
+          creator: alice,
+          to: alice,
+          data_uri: "data:," + renounce_data.to_json
+        )
+      )
+
+      owner_after_renounce = CollectionsReader.get_collection_owner(created_collection_id)
+      expect(owner_after_renounce.downcase).to eq('0x0000000000000000000000000000000000000000')
     end
 
     it "handles batch operations with arrays" do

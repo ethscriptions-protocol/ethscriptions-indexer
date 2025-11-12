@@ -53,6 +53,21 @@ class Erc721EthscriptionsCollectionParser
         'item' => :single_item
       }
     },
+    'transfer_ownership' => {
+      keys: %w[collection_id new_owner],
+      abi_type: '(bytes32,address)',
+      validators: {
+        'collection_id' => :bytes32,
+        'new_owner' => :address
+      }
+    },
+    'renounce_ownership' => {
+      keys: %w[collection_id],
+      abi_type: 'bytes32',
+      validators: {
+        'collection_id' => :bytes32
+      }
+    },
     'remove_items' => {
       keys: %w[collection_id ethscription_ids],
       abi_type: '(bytes32,bytes32[])',
@@ -399,6 +414,10 @@ class Erc721EthscriptionsCollectionParser
       build_create_and_add_self_values(validated_data, content_hash: content_hash)
     when 'add_self_to_collection'
       build_add_self_to_collection_values(validated_data, content_hash: content_hash)
+    when 'transfer_ownership'
+      build_transfer_ownership_values(validated_data)
+    when 'renounce_ownership'
+      build_renounce_ownership_values(validated_data)
     when 'remove_items'
       build_remove_items_values(validated_data)
     when 'edit_collection'
@@ -486,6 +505,18 @@ class Erc721EthscriptionsCollectionParser
     end
     # Return as packed bytes for ABI encoding
     [value[2..]].pack('H*')
+  end
+
+  def validate_address(value, field_name)
+    unless value.is_a?(String) && value.match?(/\A0x[0-9a-f]{40}\z/)
+      raise ValidationError, "Invalid address for #{field_name}: #{value}"
+    end
+
+    if value == '0x0000000000000000000000000000000000000000'
+      raise ValidationError, "Address cannot be zero for #{field_name}"
+    end
+
+    value.downcase
   end
 
   def validate_bytes32_array(value, field_name)
@@ -673,6 +704,14 @@ class Erc721EthscriptionsCollectionParser
       item[:merkleProof]
     ]
     [data['collection_id'], item_tuple]
+  end
+
+  def build_transfer_ownership_values(data)
+    [data['collection_id'], data['new_owner']]
+  end
+
+  def build_renounce_ownership_values(data)
+    data['collection_id']
   end
 
   def build_remove_items_values(data)

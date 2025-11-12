@@ -152,6 +152,7 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     event ItemsRemoved(bytes32 indexed collectionId, uint256 count, bytes32 updateTxHash);
     event CollectionEdited(bytes32 indexed collectionId);
     event CollectionLocked(bytes32 indexed collectionId);
+    event OwnershipTransferred(bytes32 indexed collectionId, address indexed previousOwner, address indexed newOwner);
 
     modifier onlyEthscriptions() {
         require(msg.sender == address(ethscriptions), "Only Ethscriptions contract");
@@ -182,6 +183,17 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         AddSelfToCollectionParams memory op = abi.decode(data, (AddSelfToCollectionParams));
 
         _addSingleItem(op.collectionId, ethscriptionId, op.item);
+    }
+
+    function op_transfer_ownership(bytes32 ethscriptionId, bytes calldata data) external onlyEthscriptions {
+        (bytes32 collectionId, address newOwner) = abi.decode(data, (bytes32, address));
+        require(newOwner != address(0), "New owner cannot be zero address");
+        _transferCollectionOwnership(ethscriptionId, collectionId, newOwner);
+    }
+
+    function op_renounce_ownership(bytes32 ethscriptionId, bytes calldata data) external onlyEthscriptions {
+        bytes32 collectionId = abi.decode(data, (bytes32));
+        _transferCollectionOwnership(ethscriptionId, collectionId, address(0));
     }
 
     function op_remove_items(bytes32 ethscriptionId, bytes calldata data) external onlyEthscriptions {
@@ -266,12 +278,6 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
     }
 
     function onTransfer(bytes32 ethscriptionId, address from, address to) external override onlyEthscriptions {
-        if (collectionExists(ethscriptionId)) {
-            ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionStore[ethscriptionId].collectionContract);
-            collection.factoryTransferOwnership(to);
-            return;
-        }
-        
         Membership storage membership = membershipOfEthscription[ethscriptionId];
         
         if (!collectionExists(membership.collectionId)) {
@@ -454,6 +460,23 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         require(currentOwner == sender, errorMessage);
     }
 
+    function _transferCollectionOwnership(bytes32 ethscriptionId, bytes32 collectionId, address newOwner) private {
+        CollectionRecord storage collection = collectionStore[collectionId];
+        require(collection.collectionContract != address(0), "Collection does not exist");
+
+        address sender = _getEthscriptionCreator(ethscriptionId);
+        ERC721EthscriptionsCollection collectionContract = ERC721EthscriptionsCollection(collection.collectionContract);
+        address currentOwner = collectionContract.owner();
+        require(currentOwner == sender, "Only collection owner can transfer");
+
+        if (newOwner == currentOwner) {
+            revert("New owner must differ");
+        }
+
+        collectionContract.factoryTransferOwnership(newOwner);
+        emit OwnershipTransferred(collectionId, currentOwner, newOwner);
+    }
+
     function _verifyItemMerkleProof(ItemData memory item, bytes32 merkleRoot) private pure {
         require(merkleRoot != bytes32(0), "Merkle proof required");
 
@@ -488,4 +511,3 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         return getCollection(collectionId);
     }
 }
-

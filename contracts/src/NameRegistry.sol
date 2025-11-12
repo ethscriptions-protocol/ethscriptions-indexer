@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import "@openzeppelin/contracts/utils/Strings.sol";
 import {Base64} from "solady/utils/Base64.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import "./ERC721EthscriptionsEnumerableUpgradeable.sol";
 import "./interfaces/IProtocolHandler.sol";
 import "./Ethscriptions.sol";
 import "./libraries/Predeploys.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /// @title NameRegistry
 /// @notice Handles legacy word-domain registrations and mirrors ownership as an ERC-721 collection.
 contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHandler {
-    using Strings for uint256;
+    using LibString for *;
 
     Ethscriptions public constant ethscriptions = Ethscriptions(Predeploys.ETHSCRIPTIONS);
 
-    string public constant PROTOCOL_NAME = "word-domains";
+    string public constant protocolName = "word-domains";
 
     struct DomainRecord {
         bytes32 packedName;
@@ -60,10 +60,6 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
     
     function symbol() public view override returns (string memory) {
         return "NAME";
-    }
-
-    function protocolName() external pure returns (string memory) {
-        return PROTOCOL_NAME;
     }
 
     // ============================
@@ -192,25 +188,88 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
         // Get the ethscription data to extract the ethscription number
         Ethscriptions.Ethscription memory ethscription = ethscriptions.getEthscription(record.ethscriptionId, false);
 
+        // Get the media URI from the ethscription
+        (string memory mediaType, string memory mediaUri) = ethscriptions.getMediaUri(record.ethscriptionId);
+
         // Convert ethscriptionId to hex string (0x prefixed)
         string memory ethscriptionIdHex = uint256(record.ethscriptionId).toHexString(32);
 
         bytes memory json = abi.encodePacked(
             '{"name":"',
-            name,
+            name.escapeJSON(),
             '","description":"Dotless word domain"',
             ',"ethscription_id":"',
             ethscriptionIdHex,
             '","ethscription_number":',
             ethscription.ethscriptionNumber.toString(),
-            ',"attributes":[',
+            ',"',
+            mediaType,
+            '":"',
+            mediaUri,
+            '","attributes":[',
             '{"trait_type":"Name","value":"',
-            name,
+            name.escapeJSON(),
             '"}',
             ']}'
         );
 
         return string(abi.encodePacked("data:application/json;base64,", Base64.encode(json)));
+    }
+
+    /// @notice OpenSea collection-level metadata
+    /// @return JSON string with collection metadata
+    function contractURI() external pure returns (string memory) {
+        return string(abi.encodePacked(
+            'data:application/json;base64,',
+            Base64.encode(bytes(
+                '{"name":"Word Domains Registry",'
+                '"description":"On-chain word domain name system for Ethscriptions. Register unique, dotless domain names as NFTs.",'
+                '"image":"data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNTAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzEwMTAxMCIvPjx0ZXh0IHg9IjI1MCIgeT0iMjUwIiBmb250LXNpemU9IjgwIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMDBmZjAwIj5bTkFNRVNdPC90ZXh0Pjwvc3ZnPg==",'
+                '"external_link":"https://ethscriptions.com"}'
+            ))
+        ));
+    }
+
+    // --- Transfer/approvals blocked externally ---------------------------------
+
+    function transferFrom(address, address, uint256)
+        public
+        pure
+        override(ERC721EthscriptionsUpgradeable, IERC721)
+    {
+        revert TransfersDisabled();
+    }
+
+    function safeTransferFrom(address, address, uint256)
+        public
+        pure
+        override(ERC721EthscriptionsUpgradeable, IERC721)
+    {
+        revert TransfersDisabled();
+    }
+
+    function safeTransferFrom(address, address, uint256, bytes memory)
+        public
+        pure
+        override(ERC721EthscriptionsUpgradeable, IERC721)
+    {
+        revert TransfersDisabled();
+    }
+
+    function approve(address, uint256)
+        public
+        pure
+        override(ERC721EthscriptionsUpgradeable, IERC721)
+    {
+        revert TransfersDisabled();
+    }
+
+    function setApprovalForAll(address, bool)
+        public
+        pure
+        override(ERC721EthscriptionsUpgradeable, IERC721)
+    {
+        revert TransfersDisabled();
     }
 
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {

@@ -169,7 +169,7 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         bytes memory collectionInitCalldata = abi.encodeWithSelector(
             ERC721EthscriptionsCollection.initialize.selector,
             deployOp.tick,  // Collection name
-            deployOp.tick.upper()  // Collection symbol
+            deployOp.tick.upper(),  // Collection symbol
             address(this),  // Manager owns the collection
             ethscriptionId  // Collection ID is the deploy ethscription ID
         );

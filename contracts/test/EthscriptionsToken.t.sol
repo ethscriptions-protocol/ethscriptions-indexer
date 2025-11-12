@@ -639,8 +639,8 @@ contract EthscriptionsTokenTest is TestSetup {
 
         // Verify collection properties
         ERC721EthscriptionsCollection collection = ERC721EthscriptionsCollection(collectionAddr);
-        assertEq(collection.name(), "COLL ERC-721");
-        assertEq(collection.symbol(), "COLL-ERC-721");
+        assertEq(collection.name(), "COLL");
+        assertEq(collection.symbol(), "COLL");
         assertEq(collection.collectionId(), DEPLOY_TX_HASH);
 
         // Verify collection lookups work

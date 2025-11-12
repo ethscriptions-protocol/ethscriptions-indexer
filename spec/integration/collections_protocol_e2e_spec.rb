@@ -1,4 +1,5 @@
 require 'rails_helper'
+require_relative '../../lib/protocol_event_reader'
 
 RSpec.describe "Collections Protocol End-to-End", type: :integration do
   include EthscriptionsTestHelper
@@ -309,5 +310,189 @@ RSpec.describe "Collections Protocol End-to-End", type: :integration do
       expect(item1[:attributes].length).to eq(4)
       expect(item1[:attributes][0]).to eq(["Type", "Rare"])
     end
+  end
+
+  describe "Merkle Root Enforcement" do
+    let(:owner_merkle_root) { '0x' + '1' * 64 }
+
+    it "allows the collection owner to add an item without a proof when the root is set" do
+      collection_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "create_collection",
+        "name" => "Owner Only",
+        "symbol" => "OWNR",
+        "max_supply" => "10",
+        "description" => "Testing owner bypass",
+        "logo_image_uri" => "",
+        "banner_image_uri" => "",
+        "background_color" => "",
+        "website_link" => "",
+        "twitter_link" => "",
+        "discord_link" => "",
+        "merkle_root" => owner_merkle_root
+      }
+
+      collection_spec = create_input(
+        creator: alice,
+        to: alice,
+        data_uri: "data:," + JSON.generate(collection_data)
+      )
+
+      collection_results = import_l1_block([collection_spec], esip_overrides: { esip6_is_enabled: true })
+      expect(collection_results[:ethscription_ids]).not_to be_empty
+      collection_id = collection_results[:ethscription_ids].first
+
+      owner_item = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "add_self_to_collection",
+        "collection_id" => collection_id,
+        "item" => {
+          "item_index" => "0",
+          "name" => "Owner Item #0",
+          "background_color" => "#123456",
+          "description" => "Inserted by the owner without a proof",
+          "attributes" => [
+            {"trait_type" => "Tier", "value" => "Owner"}
+          ],
+          "merkle_proof" => []
+        }
+      }
+
+      owner_spec = create_input(
+        creator: alice,
+        to: alice,
+        data_uri: "data:," + JSON.generate(owner_item)
+      )
+
+      owner_results = import_l1_block([owner_spec], esip_overrides: { esip6_is_enabled: true })
+      expect(owner_results[:ethscription_ids]).not_to be_empty
+      owner_item_id = owner_results[:ethscription_ids].first
+
+      receipt = owner_results[:l2_receipts].first
+      events = ProtocolEventReader.parse_receipt_events(receipt)
+      expect(events.any? { |e| e[:event] == 'ProtocolHandlerFailed' }).to eq(false)
+      expect(events.any? { |e| e[:event] == 'ProtocolHandlerSuccess' }).to eq(true)
+
+      added_event = events.find { |e| e[:event] == 'ItemsAdded' }
+      expect(added_event).not_to be_nil
+      expect(added_event[:count]).to eq(1)
+
+      stored_item = get_collection_item(collection_id, 0)
+      expect(stored_item[:ethscriptionId]).to eq(owner_item_id)
+      expect(stored_item[:name]).to eq("Owner Item #0")
+    end
+
+    it "updates the merkle root via edit_collection to allow a non-owner add" do
+      initial_merkle_root = zero_merkle_root
+      collection_data = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "create_collection",
+        "name" => "Editable Root",
+        "symbol" => "EDIT",
+        "max_supply" => "10",
+        "description" => "Testing merkle root edits",
+        "logo_image_uri" => "",
+        "banner_image_uri" => "",
+        "background_color" => "",
+        "website_link" => "",
+        "twitter_link" => "",
+        "discord_link" => "",
+        "merkle_root" => initial_merkle_root
+      }
+
+      collection_spec = create_input(
+        creator: alice,
+        to: alice,
+        data_uri: "data:," + JSON.generate(collection_data)
+      )
+
+      collection_results = import_l1_block([collection_spec], esip_overrides: { esip6_is_enabled: true })
+      collection_id = collection_results[:ethscription_ids].first
+      expect(collection_id).to be_present
+      metadata_before_edit = get_collection_metadata(collection_id)
+      expect(metadata_before_edit[:merkleRoot].downcase).to eq(initial_merkle_root.downcase)
+
+      allowlist_attributes = [{"trait_type" => "Tier", "value" => "Founder"}]
+      item_template = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "add_self_to_collection",
+        "collection_id" => collection_id,
+        "item" => {
+          "item_index" => "0",
+          "name" => "Allowlisted Item #0",
+          "background_color" => "#abcdef",
+          "description" => "Non-owner entry gated by the root",
+          "attributes" => allowlist_attributes,
+          "merkle_proof" => []
+        }
+      }
+
+      item_json = JSON.generate(item_template)
+      content_hash_hex = "0x#{Eth::Util.keccak256(item_json).unpack1('H*')}"
+      attribute_pairs = allowlist_attributes.map { |attr| [attr["trait_type"], attr["value"]] }
+      computed_root = compute_single_leaf_root(
+        content_hash_hex: content_hash_hex,
+        item_index: 0,
+        name: item_template["item"]["name"],
+        background_color: item_template["item"]["background_color"],
+        description: item_template["item"]["description"],
+        attributes: attribute_pairs
+      )
+
+      edit_payload = {
+        "p" => "erc-721-ethscriptions-collection",
+        "op" => "edit_collection",
+        "collection_id" => collection_id,
+        "description" => "",
+        "logo_image_uri" => "",
+        "banner_image_uri" => "",
+        "background_color" => "",
+        "website_link" => "",
+        "twitter_link" => "",
+        "discord_link" => "",
+        "merkle_root" => computed_root
+      }
+
+      edit_spec = create_input(
+        creator: alice,
+        to: alice,
+        data_uri: "data:," + JSON.generate(edit_payload)
+      )
+
+      edit_results = import_l1_block([edit_spec], esip_overrides: { esip6_is_enabled: true })
+      expect(edit_results[:l2_receipts].first[:status]).to eq('0x1')
+
+      metadata_after_edit = get_collection_metadata(collection_id)
+      expect(metadata_after_edit[:merkleRoot].downcase).to eq(computed_root.downcase)
+
+      second_spec = create_input(
+        creator: bob,
+        to: bob,
+        data_uri: "data:," + item_json
+      )
+
+      success_results = import_l1_block([second_spec], esip_overrides: { esip6_is_enabled: true })
+      success_receipt = success_results[:l2_receipts].first
+      success_events = ProtocolEventReader.parse_receipt_events(success_receipt)
+      expect(success_events.any? { |e| e[:event] == 'ProtocolHandlerSuccess' }).to eq(true)
+      added_event = success_events.find { |e| e[:event] == 'ItemsAdded' }
+      expect(added_event).not_to be_nil
+      expect(added_event[:count]).to eq(1)
+
+      added_item_id = success_results[:ethscription_ids].first
+      stored_item = get_collection_item(collection_id, 0)
+      expect(stored_item[:ethscriptionId]).to eq(added_item_id)
+
+      expect(get_collection_metadata(collection_id)[:merkleRoot].downcase).to eq(computed_root.downcase)
+    end
+  end
+
+  def compute_single_leaf_root(content_hash_hex:, item_index:, name:, background_color:, description:, attributes:)
+    content_hash_bytes = [content_hash_hex.delete_prefix('0x')].pack('H*')
+    encoded = Eth::Abi.encode(
+      ['bytes32', 'uint256', 'string', 'string', 'string', '(string,string)[]'],
+      [content_hash_bytes, item_index, name, background_color, description, attributes]
+    )
+    "0x#{Eth::Util.keccak256(encoded).unpack1('H*')}"
   end
 end

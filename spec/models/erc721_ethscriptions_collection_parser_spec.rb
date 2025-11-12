@@ -301,6 +301,35 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       end
     end
 
+    describe 'transfer_ownership operation' do
+      it 'encodes transfer_ownership with collection_id and new_owner' do
+        new_owner = '0x' + '1' * 40
+        json = %(data:,{"p":"erc-721-ethscriptions-collection","op":"transfer_ownership","collection_id":"0x#{"2" * 64}","new_owner":"#{new_owner}"})
+        result = ProtocolParser.for_calldata(json)
+
+        expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
+        expect(result[1]).to eq('transfer_ownership'.b)
+
+        decoded = Eth::Abi.decode(['(bytes32,address)'], result[2])[0]
+        expect(decoded[0].unpack1('H*')).to eq('2' * 64)
+        expect(decoded[1]).to eq(new_owner)
+      end
+    end
+
+    describe 'renounce_ownership operation' do
+      it 'encodes renounce_ownership as single bytes32' do
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"renounce_ownership","collection_id":"0x' + '3' * 64 + '"}'
+        result = ProtocolParser.for_calldata(json)
+
+        expect(result[0]).to eq('erc-721-ethscriptions-collection'.b)
+        expect(result[1]).to eq('renounce_ownership'.b)
+
+        # Eth::Abi.decode treats strings containing only hex characters as hex input,
+        # so compare the packed bytes directly via hex.
+        expect(result[2].unpack1('H*')).to eq('3' * 64)
+      end
+    end
+
     describe 'round-trip tests' do
       # @generic-compatible
       it 'preserves all data through encode/decode cycle' do
@@ -376,6 +405,12 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       it 'returns default params for missing required fields' do
         # Missing collection_id
         json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"lock_collection"}'
+        result = ProtocolParser.for_calldata(json)
+        expect(result).to eq(default_params)
+      end
+
+      it 'rejects zero address for transfer_ownership new_owner' do
+        json = 'data:,{"p":"erc-721-ethscriptions-collection","op":"transfer_ownership","collection_id":"0x' + '4' * 64 + '","new_owner":"0x' + '0' * 40 + '"}'
         result = ProtocolParser.for_calldata(json)
         expect(result).to eq(default_params)
       end

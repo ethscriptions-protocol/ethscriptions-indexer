@@ -12,7 +12,7 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 /// @title NameRegistry
 /// @notice Handles legacy word-domain registrations and mirrors ownership as an ERC-721 collection.
 contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHandler {
-    using LibString for uint256;
+    using LibString for *;
 
     Ethscriptions public constant ethscriptions = Ethscriptions(Predeploys.ETHSCRIPTIONS);
 
@@ -188,20 +188,27 @@ contract NameRegistry is ERC721EthscriptionsEnumerableUpgradeable, IProtocolHand
         // Get the ethscription data to extract the ethscription number
         Ethscriptions.Ethscription memory ethscription = ethscriptions.getEthscription(record.ethscriptionId, false);
 
+        // Get the media URI from the ethscription
+        (string memory mediaType, string memory mediaUri) = ethscriptions.getMediaUri(record.ethscriptionId);
+
         // Convert ethscriptionId to hex string (0x prefixed)
         string memory ethscriptionIdHex = uint256(record.ethscriptionId).toHexString(32);
 
         bytes memory json = abi.encodePacked(
             '{"name":"',
-            name,
+            name.escapeJSON(),
             '","description":"Dotless word domain"',
             ',"ethscription_id":"',
             ethscriptionIdHex,
             '","ethscription_number":',
             ethscription.ethscriptionNumber.toString(),
-            ',"attributes":[',
+            ',"',
+            mediaType,
+            '":"',
+            mediaUri,
+            '","attributes":[',
             '{"trait_type":"Name","value":"',
-            name,
+            name.escapeJSON(),
             '"}',
             ']}'
         );

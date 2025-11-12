@@ -124,7 +124,7 @@ contract ERC721EthscriptionsCollection is ERC721EthscriptionsEnumerableUpgradeab
             ',"',
             mediaType,
             '":"',
-            mediaUri.escapeJSON(),
+            mediaUri,
             '"'
         );
 

@@ -90,7 +90,7 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
         _transferERC20(from, to, units());
 
         // Transfer the specific NFT using the proper function
-        uint256 id = ID_ENCODING_PREFIX + nftId;
+        uint256 id = _encodeMintId(nftId);
         _transferERC721(from, to, id);
     }
 
@@ -155,10 +155,11 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
     /// @notice Returns metadata URI for NFT tokens
     /// @dev Returns a data URI with JSON metadata fetched from the main Ethscriptions contract
     function tokenURI(uint256 id_) public view virtual override returns (string memory) {
-      // This will revert InvalidTokenId / NotFound on bad ids
-        ownerOf(id_);
-        
-        uint256 mintId = id_ & ~ID_ENCODING_PREFIX;
+        // Normalize and enforce existence (accepts human mintId or encoded tokenId)
+        uint256 tokenId = _normalizeTokenId(id_);
+        ownerOf(tokenId); // reverts on invalid / nonexistent
+
+        uint256 mintId = _decodeTokenId(tokenId);
 
         // Get the ethscriptionId for this mintId from the manager
         ERC20FixedDenominationManager mgr = ERC20FixedDenominationManager(manager);

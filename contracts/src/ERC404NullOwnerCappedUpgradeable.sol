@@ -79,6 +79,8 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     // ERC20 Events are inherited from IERC20 (Transfer, Approval)
 
     // ERC721 Events (using different names to avoid conflicts with ERC20)
+    // event Transfer(address indexed from, address indexed to, uint256 value);
+    event ERC20Transfer(address indexed from, address indexed to, uint256 value);
     event ERC721Transfer(address indexed from, address indexed to, uint256 indexed id);
     event ERC721Approval(address indexed owner, address indexed spender, uint256 indexed id);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
@@ -202,12 +204,9 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     }
 
     function ownerOf(uint256 id_) public view virtual override(IERC404) returns (address) {
-        if (!_isValidTokenId(id_)) {
-            revert InvalidTokenId();
-        }
-        
         TokenStorage storage $ = _getS();
-        TokenData storage t = $.tokens[id_];
+        uint256 tokenId = _normalizeTokenId(id_);
+        TokenData storage t = $.tokens[tokenId];
 
         if (!t.exists) {
             revert NotFound();
@@ -223,7 +222,13 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
 
     function getApproved(uint256 id_) public view virtual returns (address) {
         TokenStorage storage $ = _getS();
-        return $.getApproved[id_];
+        uint256 tokenId = _normalizeTokenId(id_);
+
+        if (!$.tokens[tokenId].exists) {
+            revert NotFound();
+        }
+
+        return $.getApproved[tokenId];
     }
 
     function isApprovedForAll(address owner_, address operator_) public view virtual override(IERC404) returns (bool) {
@@ -366,25 +371,29 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
             $.balances[to_] += value_;
         }
 
-        emit Transfer(from_, to_, value_);
+        emit ERC20Transfer(from_, to_, value_);
     }
 
     /// @notice Transfer an ERC721 token
     function _transferERC721(address from_, address to_, uint256 id_) internal virtual {
         TokenStorage storage $ = _getS();
-        TokenData storage t = $.tokens[id_];
-        
-        if (from_ != ownerOf(id_)) {
+        uint256 tokenId = _normalizeTokenId(id_);
+        TokenData storage t = $.tokens[tokenId];
+
+        if (!t.exists) {
+            revert NotFound();
+        }
+        if (from_ != t.owner) {
             revert Unauthorized();
         }
         
         if (from_ != address(0)) {
             // Clear approval
-            delete $.getApproved[id_];
+            delete $.getApproved[tokenId];
 
             // Remove from sender's owned list
             uint256 lastTokenId = $.owned[from_][$.owned[from_].length - 1];
-            if (lastTokenId != id_) {
+            if (lastTokenId != tokenId) {
                 uint256 updatedIndex = t.index;
                 $.owned[from_][updatedIndex] = lastTokenId;
                 $.tokens[lastTokenId].index = uint88(updatedIndex);
@@ -399,9 +408,9 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
         }
         t.owner = to_;
         t.index = uint88(newIndex);
-        $.owned[to_].push(id_);
+        $.owned[to_].push(tokenId);
 
-        emit ERC721Transfer(from_, to_, id_);
+        emit ERC721Transfer(from_, to_, tokenId);
     }
 
     /// @notice Mint ERC20 tokens without triggering NFT creation
@@ -424,7 +433,7 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
         TokenStorage storage $ = _getS();
 
         // Add the ID_ENCODING_PREFIX to the provided ID
-        uint256 id = ID_ENCODING_PREFIX + nftId_;
+        uint256 id = _encodeMintId(nftId_);
 
         TokenData storage t = $.tokens[id];
 
@@ -444,8 +453,37 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     //                      HELPER FUNCTIONS
     // =============================================================
 
-    function _isValidTokenId(uint256 id_) internal pure returns (bool) {
-        return id_ > ID_ENCODING_PREFIX && id_ != type(uint256).max;
+    /// @dev Normalizes caller input into the encoded tokenId form (adds prefix for human mint IDs).
+    function _normalizeTokenId(uint256 id_) internal pure returns (uint256 tokenId_) {
+        if (id_ == 0 || id_ == type(uint256).max) {
+            revert InvalidTokenId();
+        }
+
+        tokenId_ = id_ < ID_ENCODING_PREFIX ? _encodeMintId(id_) : id_;
+
+        if (tokenId_ <= ID_ENCODING_PREFIX || tokenId_ == type(uint256).max) {
+            revert InvalidTokenId();
+        }
+    }
+
+    /// @dev Encodes a human-friendly mintId into the full tokenId with prefix.
+    function _encodeMintId(uint256 mintId_) internal pure returns (uint256) {
+        if (mintId_ == 0 || mintId_ >= ID_ENCODING_PREFIX) {
+            revert InvalidTokenId();
+        }
+        uint256 tokenId = ID_ENCODING_PREFIX + mintId_;
+        if (tokenId == type(uint256).max) {
+            revert InvalidTokenId();
+        }
+        return tokenId;
+    }
+
+    /// @dev Decodes an encoded tokenId back to the human-friendly mintId.
+    function _decodeTokenId(uint256 tokenId_) internal pure returns (uint256) {
+        if (tokenId_ <= ID_ENCODING_PREFIX || tokenId_ == type(uint256).max) {
+            revert InvalidTokenId();
+        }
+        return tokenId_ - ID_ENCODING_PREFIX;
     }
 
     // =============================================================

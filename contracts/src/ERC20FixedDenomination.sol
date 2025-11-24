@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import "./ERC20NullOwnerCappedUpgradeable.sol";
+import "./ERC404NullOwnerCappedUpgradeable.sol";
 import "./libraries/Predeploys.sol";
+import "./Ethscriptions.sol";
+import "./ERC20FixedDenominationManager.sol";
+import {LibString} from "solady/utils/LibString.sol";
+import {Base64} from "solady/utils/Base64.sol";
 
 /// @title ERC20FixedDenomination
-/// @notice ERC-20 proxy whose supply is managed in a fixed denomination by the manager contract.
+/// @notice Hybrid ERC-20/ERC-721 proxy whose supply is managed in fixed denominations by the manager contract.
 /// @dev User-initiated transfers/approvals are disabled; only the manager can mutate balances.
-contract ERC20FixedDenomination is ERC20NullOwnerCappedUpgradeable {
+///      Each NFT represents a fixed denomination amount (e.g., 1 NFT = mintAmount tokens).
+contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
+    using LibString for *;
 
     // =============================================================
     //                         CONSTANTS
@@ -48,36 +54,159 @@ contract ERC20FixedDenomination is ERC20NullOwnerCappedUpgradeable {
         string memory name_,
         string memory symbol_,
         uint256 cap_,
+        uint256 mintAmount_,
         bytes32 deployEthscriptionId_
     ) external initializer {
-        __ERC20_init(name_, symbol_);
-        __ERC20Capped_init(cap_);
+        // cap_ is maxSupply * 10**18
+        // mintAmount_ is the denomination amount (e.g., 1000 for 1000 tokens per NFT)
+        // units is mintAmount_ * 10**18 (amount of wei per NFT)
+
+        uint256 units_ = mintAmount_ * (10 ** decimals());
+
+        __ERC404_init(name_, symbol_, cap_, units_);
         deployEthscriptionId = deployEthscriptionId_;
     }
 
-    /// @notice Mint tokens (manager only)
-    function mint(address to, uint256 amount) external onlyManager {
-        _mint(to, amount);
+    /// @notice Historical accessor for the fixed denomination (whole tokens per NFT)
+    function mintAmount() public view returns (uint256) {
+        return denomination();
     }
 
-    /// @notice Force transfer tokens (manager only)
-    function forceTransfer(address from, address to, uint256 amount) external onlyManager {
-        _update(from, to, amount);
+    /// @notice Mint one fixed-denomination note (manager only)
+    /// @param to The recipient address
+    /// @param nftId The specific NFT ID to mint (the mintId)
+    function mint(address to, uint256 nftId) external onlyManager {
+        // Mint the ERC20 tokens without triggering NFT creation
+        _mintERC20WithoutNFT(to, units());
+        _mintERC721(to, nftId);
+    }
+
+    /// @notice Force transfer the fixed-denomination NFT and its synced ERC20 lot (manager only)
+    /// @param from The sender address
+    /// @param to The recipient address
+    /// @param nftId The NFT ID to transfer (the mintId)
+    function forceTransfer(address from, address to, uint256 nftId) external onlyManager {
+        // Transfer the ERC20 tokens without triggering dynamic NFT logic
+        _transferERC20(from, to, units());
+
+        // Transfer the specific NFT using the proper function
+        uint256 id = ID_ENCODING_PREFIX + nftId;
+        _transferERC721(from, to, id);
     }
 
     // =============================================================
-    //                DISABLED ERC20 FUNCTIONS
+    //                DISABLED ERC20/721 FUNCTIONS
     // =============================================================
 
+    /// @notice Regular transfers are disabled - only manager can transfer
     function transfer(address, uint256) public pure override returns (bool) {
         revert TransfersOnlyViaEthscriptions();
     }
 
+    /// @notice Regular transferFrom is disabled - only manager can transfer
     function transferFrom(address, address, uint256) public pure override returns (bool) {
         revert TransfersOnlyViaEthscriptions();
     }
 
+    /// @notice Approvals are disabled
     function approve(address, uint256) public pure override returns (bool) {
         revert ApprovalsNotAllowed();
     }
+
+    /// @notice ERC721 approvals are disabled
+    function erc721Approve(address, uint256) public pure override {
+        revert ApprovalsNotAllowed();
+    }
+
+    /// @notice ERC20 approvals are disabled
+    function erc20Approve(address, uint256) public pure override returns (bool) {
+        revert ApprovalsNotAllowed();
+    }
+
+    /// @notice SetApprovalForAll is disabled
+    function setApprovalForAll(address, bool) public pure override {
+        revert ApprovalsNotAllowed();
+    }
+
+    /// @notice ERC721 transferFrom is disabled
+    function erc721TransferFrom(address, address, uint256) public pure override {
+        revert TransfersOnlyViaEthscriptions();
+    }
+
+    /// @notice ERC20 transferFrom is disabled
+    function erc20TransferFrom(address, address, uint256) public pure override returns (bool) {
+        revert TransfersOnlyViaEthscriptions();
+    }
+
+    /// @notice Safe transfers are disabled
+    function safeTransferFrom(address, address, uint256) public pure override {
+        revert TransfersOnlyViaEthscriptions();
+    }
+
+    /// @notice Safe transfers with data are disabled
+    function safeTransferFrom(address, address, uint256, bytes memory) public pure override {
+        revert TransfersOnlyViaEthscriptions();
+    }
+
+    // =============================================================
+    //                     TOKEN URI
+    // =============================================================
+
+    /// @notice Returns metadata URI for NFT tokens
+    /// @dev Returns a data URI with JSON metadata fetched from the main Ethscriptions contract
+    function tokenURI(uint256 id_) public view virtual override returns (string memory) {
+        uint256 mintId = id_ & ~ID_ENCODING_PREFIX;
+
+        // Get the ethscriptionId for this mintId from the manager
+        ERC20FixedDenominationManager mgr = ERC20FixedDenominationManager(manager);
+        bytes32 ethscriptionId = mgr.getMintEthscriptionId(deployEthscriptionId, mintId);
+
+        if (ethscriptionId == bytes32(0)) {
+            // If no ethscription found, return minimal metadata
+            return string(abi.encodePacked(
+                "data:application/json;utf8,",
+                '{"name":"', name(), ' Note #', mintId.toString(), '",',
+                '"description":"Denomination note for ', mintAmount().toString(), ' tokens"}'
+            ));
+        }
+
+        // Get the ethscription data from the main contract
+        Ethscriptions ethscriptionsContract = Ethscriptions(Predeploys.ETHSCRIPTIONS);
+        Ethscriptions.Ethscription memory ethscription = ethscriptionsContract.getEthscription(ethscriptionId, false);
+        (string memory mediaType, string memory mediaUri) = ethscriptionsContract.getMediaUri(ethscriptionId);
+
+        // Convert ethscriptionId to hex string (0x prefixed)
+        string memory ethscriptionIdHex = uint256(ethscriptionId).toHexString(32);
+
+        // Build the JSON metadata
+        string memory jsonStart = string.concat(
+            '{"name":"', name(), ' Note #', mintId.toString(), '"',
+            ',"description":"Fixed denomination note for ', mintAmount().toString(), ' ', symbol(), ' tokens"'
+        );
+
+        // Add ethscription ID and number
+        string memory ethscriptionFields = string.concat(
+            ',"ethscription_id":"', ethscriptionIdHex, '"',
+            ',"ethscription_number":', ethscription.ethscriptionNumber.toString()
+        );
+
+        // Add media field
+        string memory mediaField = string.concat(
+            ',"', mediaType, '":"', mediaUri, '"'
+        );
+
+        // Add attributes
+        string memory attributesJson = string.concat(
+            ',"attributes":[',
+            '{"trait_type":"Note ID","value":"', mintId.toString(), '"},',
+            '{"trait_type":"Denomination","value":"', mintAmount().toString(), '"},',
+            '{"trait_type":"Token","value":"', symbol(), '"}',
+            ']'
+        );
+
+        string memory json = string.concat(jsonStart, ethscriptionFields, mediaField, attributesJson, '}');
+
+        return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
+    }
+
 }

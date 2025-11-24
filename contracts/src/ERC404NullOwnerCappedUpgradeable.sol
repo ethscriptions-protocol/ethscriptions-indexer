@@ -373,11 +373,11 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     function _transferERC721(address from_, address to_, uint256 id_) internal virtual {
         TokenStorage storage $ = _getS();
         TokenData storage t = $.tokens[id_];
-
-        if (!t.exists) {
-            revert NotFound();
+        
+        if (from_ != ownerOf(id_)) {
+            revert Unauthorized();
         }
-
+        
         if (from_ != address(0)) {
             // Clear approval
             delete $.getApproved[id_];

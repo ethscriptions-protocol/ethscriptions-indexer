@@ -154,7 +154,6 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
     /// @notice Returns metadata URI for NFT tokens
     /// @dev Returns a data URI with JSON metadata fetched from the main Ethscriptions contract
     function tokenURI(uint256 mintId) public view virtual override returns (string memory) {
-        _validateTokenId(mintId);
         ownerOf(mintId); // reverts on invalid / nonexistent
 
         // Get the ethscriptionId for this mintId from the manager

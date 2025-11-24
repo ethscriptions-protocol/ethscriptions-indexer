@@ -69,9 +69,6 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     /// keccak256(abi.encode(uint256(keccak256("ethscriptions.storage.ERC404NullOwnerCapped")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_LOCATION = 0x8a0c9d8e5f7b3a2c1d4e6f8a9b7c5d3e2f1a4b6c8d9e7f5a3b2c1d4e6f8a9b00;
 
-    /// @dev Constant for token id encoding
-    uint256 public constant ID_ENCODING_PREFIX = 1 << 255;
-
     // =============================================================
     //                         EVENTS
     // =============================================================
@@ -127,14 +124,9 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     ) internal onlyInitializing {
         TokenStorage storage $ = _getS();
 
-        if (cap_ == 0 || cap_ > ID_ENCODING_PREFIX - 1) {
-            revert ERC20InvalidCap(cap_);
-        }
-        
+        if (cap_ == 0) revert ERC20InvalidCap(cap_);
         uint256 base = 10 ** decimals();
-        if (units_ == 0 || units_ % base != 0) {
-            revert InvalidUnits(units_);
-        }
+        if (units_ == 0 || units_ % base != 0) revert InvalidUnits(units_);
 
         $.name = name_;
         $.symbol = symbol_;
@@ -175,6 +167,17 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
         TokenStorage storage $ = _getS();
         return $.balances[account];
     }
+    
+    function balanceOf(address owner_, uint256 id_)
+        public
+        view
+        returns (uint256)
+    {
+        TokenStorage storage $ = _getS();
+        TokenData storage t = $.tokens[id_];
+        if (!t.exists) return 0;
+        return t.owner == owner_ ? 1 : 0;
+    }
 
     function allowance(address owner, address spender) public view virtual override(IERC404, IERC20) returns (uint256) {
         TokenStorage storage $ = _getS();
@@ -204,13 +207,11 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     }
 
     function ownerOf(uint256 id_) public view virtual override(IERC404) returns (address) {
+        _validateTokenId(id_);
         TokenStorage storage $ = _getS();
-        uint256 tokenId = _normalizeTokenId(id_);
-        TokenData storage t = $.tokens[tokenId];
+        TokenData storage t = $.tokens[id_];
 
-        if (!t.exists) {
-            revert NotFound();
-        }
+        if (!t.exists) revert NotFound();
 
         return t.owner;
     }
@@ -221,14 +222,11 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     }
 
     function getApproved(uint256 id_) public view virtual returns (address) {
+        _validateTokenId(id_);
         TokenStorage storage $ = _getS();
-        uint256 tokenId = _normalizeTokenId(id_);
+        if (!$.tokens[id_].exists) revert NotFound();
 
-        if (!$.tokens[tokenId].exists) {
-            revert NotFound();
-        }
-
-        return $.getApproved[tokenId];
+        return $.getApproved[id_];
     }
 
     function isApprovedForAll(address owner_, address operator_) public view virtual override(IERC404) returns (bool) {
@@ -352,9 +350,6 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
             if (newSupply > $.cap) {
                 revert ERC20ExceededCap(newSupply, $.cap);
             }
-            if (newSupply > ID_ENCODING_PREFIX) {
-                revert MintLimitReached();
-            }
             $.totalSupply = newSupply;
         } else {
             // Transfer
@@ -371,29 +366,25 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
             $.balances[to_] += value_;
         }
 
-        emit ERC20Transfer(from_, to_, value_);
+        emit Transfer(from_, to_, value_);
+        // emit ERC20Transfer(from_, to_, value_);
     }
 
     /// @notice Transfer an ERC721 token
     function _transferERC721(address from_, address to_, uint256 id_) internal virtual {
         TokenStorage storage $ = _getS();
-        uint256 tokenId = _normalizeTokenId(id_);
-        TokenData storage t = $.tokens[tokenId];
+        TokenData storage t = $.tokens[id_];
 
-        if (!t.exists) {
-            revert NotFound();
-        }
-        if (from_ != t.owner) {
-            revert Unauthorized();
-        }
+        if (!t.exists) revert NotFound();
+        if (from_ != t.owner) revert Unauthorized();
         
         if (from_ != address(0)) {
             // Clear approval
-            delete $.getApproved[tokenId];
+            delete $.getApproved[id_];
 
             // Remove from sender's owned list
             uint256 lastTokenId = $.owned[from_][$.owned[from_].length - 1];
-            if (lastTokenId != tokenId) {
+            if (lastTokenId != id_) {
                 uint256 updatedIndex = t.index;
                 $.owned[from_][updatedIndex] = lastTokenId;
                 $.tokens[lastTokenId].index = uint88(updatedIndex);
@@ -408,9 +399,9 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
         }
         t.owner = to_;
         t.index = uint88(newIndex);
-        $.owned[to_].push(tokenId);
+        $.owned[to_].push(id_);
 
-        emit ERC721Transfer(from_, to_, tokenId);
+        emit ERC721Transfer(from_, to_, id_);
     }
 
     /// @notice Mint ERC20 tokens without triggering NFT creation
@@ -426,16 +417,11 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
         if (to_ == address(0)) {
             revert InvalidRecipient();
         }
-        if (nftId_ == 0 || nftId_ >= ID_ENCODING_PREFIX - 1) {
-            revert InvalidTokenId();
-        }
+        _validateTokenId(nftId_);
 
         TokenStorage storage $ = _getS();
 
-        // Add the ID_ENCODING_PREFIX to the provided ID
-        uint256 id = _encodeMintId(nftId_);
-
-        TokenData storage t = $.tokens[id];
+        TokenData storage t = $.tokens[nftId_];
 
         // Check if this NFT already exists (including null-owner)
         if (t.exists) {
@@ -443,7 +429,7 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
         }
 
         t.exists = true;
-        _transferERC721(address(0), to_, id);
+        _transferERC721(address(0), to_, nftId_);
 
         // Increment minted supply counter
         $.minted++;
@@ -453,37 +439,11 @@ abstract contract ERC404NullOwnerCappedUpgradeable is
     //                      HELPER FUNCTIONS
     // =============================================================
 
-    /// @dev Normalizes caller input into the encoded tokenId form (adds prefix for human mint IDs).
-    function _normalizeTokenId(uint256 id_) internal pure returns (uint256 tokenId_) {
+    /// @dev Simple tokenId validation: nonzero and not max uint256.
+    function _validateTokenId(uint256 id_) internal pure {
         if (id_ == 0 || id_ == type(uint256).max) {
             revert InvalidTokenId();
         }
-
-        tokenId_ = id_ < ID_ENCODING_PREFIX ? _encodeMintId(id_) : id_;
-
-        if (tokenId_ <= ID_ENCODING_PREFIX || tokenId_ == type(uint256).max) {
-            revert InvalidTokenId();
-        }
-    }
-
-    /// @dev Encodes a human-friendly mintId into the full tokenId with prefix.
-    function _encodeMintId(uint256 mintId_) internal pure returns (uint256) {
-        if (mintId_ == 0 || mintId_ >= ID_ENCODING_PREFIX) {
-            revert InvalidTokenId();
-        }
-        uint256 tokenId = ID_ENCODING_PREFIX + mintId_;
-        if (tokenId == type(uint256).max) {
-            revert InvalidTokenId();
-        }
-        return tokenId;
-    }
-
-    /// @dev Decodes an encoded tokenId back to the human-friendly mintId.
-    function _decodeTokenId(uint256 tokenId_) internal pure returns (uint256) {
-        if (tokenId_ <= ID_ENCODING_PREFIX || tokenId_ == type(uint256).max) {
-            revert InvalidTokenId();
-        }
-        return tokenId_ - ID_ENCODING_PREFIX;
     }
 
     // =============================================================

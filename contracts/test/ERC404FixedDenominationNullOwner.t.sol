@@ -108,13 +108,13 @@ contract ERC404FixedDenominationNullOwnerTest is TestSetup {
         // Mint to bob
         mintNote(tokenAddr, "TNULL", 1, 1000, bytes32(uint256(0xAAAA)), bob);
         assertEq(token.balanceOf(bob), 1000 * 1e18);
-        assertEq(token.ownerOf(token.ID_ENCODING_PREFIX() + 1), bob);
+        assertEq(token.ownerOf(1), bob);
         assertEq(token.totalSupply(), 1000 * 1e18);
 
         // Mint to null owner (initialOwner = 0) should end with 0x0 owning NFT and ERC20
         mintNote(tokenAddr, "TNULL", 2, 1000, bytes32(uint256(0xBBBB)), address(0));
         assertEq(token.balanceOf(address(0)), 1000 * 1e18);
-        assertEq(token.ownerOf(token.ID_ENCODING_PREFIX() + 2), address(0));
+        assertEq(token.ownerOf(2), address(0));
         assertEq(token.totalSupply(), 2000 * 1e18);
     }
 
@@ -132,7 +132,7 @@ contract ERC404FixedDenominationNullOwnerTest is TestSetup {
 
         assertEq(token.totalSupply(), supplyBefore);
         assertEq(token.balanceOf(address(0)), 1000 * 1e18);
-        assertEq(token.ownerOf(token.ID_ENCODING_PREFIX() + 1), address(0));
+        assertEq(token.ownerOf(1), address(0));
     }
 
     function testCapEnforcedOnMint() public {

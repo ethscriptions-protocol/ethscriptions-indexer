@@ -90,8 +90,7 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
         _transferERC20(from, to, units());
 
         // Transfer the specific NFT using the proper function
-        uint256 id = _encodeMintId(nftId);
-        _transferERC721(from, to, id);
+        _transferERC721(from, to, nftId);
     }
 
     // =============================================================
@@ -154,25 +153,13 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
 
     /// @notice Returns metadata URI for NFT tokens
     /// @dev Returns a data URI with JSON metadata fetched from the main Ethscriptions contract
-    function tokenURI(uint256 id_) public view virtual override returns (string memory) {
-        // Normalize and enforce existence (accepts human mintId or encoded tokenId)
-        uint256 tokenId = _normalizeTokenId(id_);
-        ownerOf(tokenId); // reverts on invalid / nonexistent
-
-        uint256 mintId = _decodeTokenId(tokenId);
+    function tokenURI(uint256 mintId) public view virtual override returns (string memory) {
+        _validateTokenId(mintId);
+        ownerOf(mintId); // reverts on invalid / nonexistent
 
         // Get the ethscriptionId for this mintId from the manager
         ERC20FixedDenominationManager mgr = ERC20FixedDenominationManager(manager);
         bytes32 ethscriptionId = mgr.getMintEthscriptionId(deployEthscriptionId, mintId);
-
-        if (ethscriptionId == bytes32(0)) {
-            // If no ethscription found, return minimal metadata
-            return string(abi.encodePacked(
-                "data:application/json;utf8,",
-                '{"name":"', name(), ' Note #', mintId.toString(), '",',
-                '"description":"Denomination note for ', mintAmount().toString(), ' tokens"}'
-            ));
-        }
 
         // Get the ethscription data from the main contract
         Ethscriptions ethscriptionsContract = Ethscriptions(Predeploys.ETHSCRIPTIONS);
@@ -184,7 +171,7 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
 
         // Build the JSON metadata
         string memory jsonStart = string.concat(
-            '{"name":"', name(), ' Note #', mintId.toString(), '"',
+            '{"name":"', name(), ' Token #', mintId.toString(), '"',
             ',"description":"Fixed denomination token for ', mintAmount().toString(), ' ', symbol(), ' tokens"'
         );
 

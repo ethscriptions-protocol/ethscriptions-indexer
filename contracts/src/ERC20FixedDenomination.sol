@@ -155,6 +155,9 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
     /// @notice Returns metadata URI for NFT tokens
     /// @dev Returns a data URI with JSON metadata fetched from the main Ethscriptions contract
     function tokenURI(uint256 id_) public view virtual override returns (string memory) {
+      // This will revert InvalidTokenId / NotFound on bad ids
+        ownerOf(id_);
+        
         uint256 mintId = id_ & ~ID_ENCODING_PREFIX;
 
         // Get the ethscriptionId for this mintId from the manager
@@ -181,7 +184,7 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
         // Build the JSON metadata
         string memory jsonStart = string.concat(
             '{"name":"', name(), ' Note #', mintId.toString(), '"',
-            ',"description":"Fixed denomination note for ', mintAmount().toString(), ' ', symbol(), ' tokens"'
+            ',"description":"Fixed denomination token for ', mintAmount().toString(), ' ', symbol(), ' tokens"'
         );
 
         // Add ethscription ID and number
@@ -195,16 +198,7 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
             ',"', mediaType, '":"', mediaUri, '"'
         );
 
-        // Add attributes
-        string memory attributesJson = string.concat(
-            ',"attributes":[',
-            '{"trait_type":"Note ID","value":"', mintId.toString(), '"},',
-            '{"trait_type":"Denomination","value":"', mintAmount().toString(), '"},',
-            '{"trait_type":"Token","value":"', symbol(), '"}',
-            ']'
-        );
-
-        string memory json = string.concat(jsonStart, ethscriptionFields, mediaField, attributesJson, '}');
+        string memory json = string.concat(jsonStart, ethscriptionFields, mediaField, '}');
 
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }

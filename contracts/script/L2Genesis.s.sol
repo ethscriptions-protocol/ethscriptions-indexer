@@ -7,7 +7,6 @@ import {Predeploys} from "../src/libraries/Predeploys.sol";
 import {Constants} from "../src/libraries/Constants.sol";
 import {Ethscriptions} from "../src/Ethscriptions.sol";
 import {MetaStoreLib} from "../src/libraries/MetaStoreLib.sol";
-import {NameRegistry} from "../src/NameRegistry.sol";
 import "forge-std/console.sol";
 
 /// @title GenesisEthscriptions
@@ -212,8 +211,7 @@ contract L2Genesis is Script {
             bool isProxiedContract = addr == Predeploys.ETHSCRIPTIONS ||
                 addr == Predeploys.ERC20_FIXED_DENOMINATION_MANAGER ||
                 addr == Predeploys.ETHSCRIPTIONS_PROVER ||
-                addr == Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER ||
-                addr == Predeploys.NAME_REGISTRY;
+                addr == Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER;
             if (isProxiedContract) {
                 address impl = Predeploys.predeployToCodeNamespace(addr);
                 setImplementation(addr, impl);
@@ -224,7 +222,6 @@ contract L2Genesis is Script {
         _setImplementationCodeNamed(Predeploys.ERC20_FIXED_DENOMINATION_MANAGER, "ERC20FixedDenominationManager");
         _setImplementationCodeNamed(Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER, "ERC721EthscriptionsCollectionManager");
         _setImplementationCodeNamed(Predeploys.ETHSCRIPTIONS_PROVER, "EthscriptionsProver");
-        _setImplementationCodeNamed(Predeploys.NAME_REGISTRY, "NameRegistry");
         // Templates live directly at their addresses (no proxy wrapping)
         _setCodeAt(Predeploys.ERC20_FIXED_DENOMINATION_IMPLEMENTATION, "ERC20FixedDenomination");
         _setCodeAt(Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_IMPLEMENTATION, "ERC721EthscriptionsCollection");
@@ -245,9 +242,6 @@ contract L2Genesis is Script {
 
         ethscriptions.registerProtocol("erc-721-ethscriptions-collection", Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER);
         console.log("Registered erc-721-ethscriptions-collection protocol handler:", Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_MANAGER);
-
-        ethscriptions.registerProtocol("word-domains", Predeploys.NAME_REGISTRY);
-        console.log("Registered word-domains protocol handler:", Predeploys.NAME_REGISTRY);
     }
 
     /// @notice Deploy L1Block contract (stores L1 block attributes)

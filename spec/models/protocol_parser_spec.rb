@@ -4,28 +4,6 @@ RSpec.describe ProtocolParser do
   let(:zero_merkle_root) { '0x' + '0' * 64 }
 
   describe '.extract' do
-    context 'word domains protocol' do
-      it 'parses raw word registrations' do
-        content_uri = 'data:,alpha'
-
-        result = described_class.extract(content_uri)
-
-        expect(result).not_to be_nil
-        expect(result[:type]).to eq(:word_domains)
-        expect(result[:protocol]).to eq('word-domains'.b)
-        expect(result[:operation]).to eq('register'.b)
-      end
-
-      it 'parses set_primary JSON operations' do
-        content_uri = 'data:,{"p":"word-domains","op":"set_primary","name":"alpha"}'
-
-        result = described_class.extract(content_uri)
-
-        expect(result).not_to be_nil
-        expect(result[:type]).to eq(:word_domains)
-        expect(result[:operation]).to eq('set_primary'.b)
-      end
-    end
     context 'erc-20-fixed-denomination protocol' do
       it 'parses a valid deploy inscription' do
         content_uri = 'data:,{"p":"erc-20","op":"deploy","tick":"punk","max":"21000000","lim":"1000"}'
@@ -99,23 +77,6 @@ RSpec.describe ProtocolParser do
   end
 
   describe '.for_calldata' do
-    it 'encodes word domain registrations' do
-      protocol, operation, encoded = described_class.for_calldata('data:,beta')
-
-      expect(protocol).to eq('word-domains'.b)
-      expect(operation).to eq('register'.b)
-      expect(Eth::Abi.decode(['string'], encoded).first).to eq('beta')
-    end
-
-    it 'encodes word domain set_primary operations' do
-      content_uri = 'data:,{"p":"word-domains","op":"set_primary","name":"beta"}'
-
-      protocol, operation, encoded = described_class.for_calldata(content_uri)
-
-      expect(protocol).to eq('word-domains'.b)
-      expect(operation).to eq('set_primary'.b)
-      expect(Eth::Abi.decode(['string'], encoded).first).to eq('beta')
-    end
     it 'encodes erc-20 deploy params' do
       content_uri = 'data:,{"p":"erc-20","op":"deploy","tick":"punk","max":"21000000","lim":"1000"}'
 

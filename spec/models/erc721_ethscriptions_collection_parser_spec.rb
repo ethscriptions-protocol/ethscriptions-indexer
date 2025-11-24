@@ -368,8 +368,6 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
         test_cases = [
           'data:,{broken json',
           'data:,',
-          # Note: 'data:,null' is a valid word-domains registration for the word "null"
-          # so it's excluded from this test
           'data:,[]',
           'data:,"string"'
         ]

@@ -5,7 +5,6 @@ class ProtocolParser
 
   # Protocol name to parser class mapping
   PROTOCOL_PARSERS = {
-    'word-domains' => WordDomainsParser,
     'erc-20' => Erc20FixedDenominationParser,
     'erc-20-fixed-denomination' => Erc20FixedDenominationParser,
     'erc-721-ethscriptions-collection' => Erc721EthscriptionsCollectionParser
@@ -15,7 +14,6 @@ class ProtocolParser
     # Parse data URI and extract protocol info
     parsed = parse_data_uri_and_protocol(content_uri)
 
-    # Special case: plain word-domains registration (data:,word) has no protocol markers
     if parsed.nil?
       # If we have an ethscription_id, try import fallback for collections regardless of content
       if ethscription_id
@@ -49,7 +47,7 @@ class ProtocolParser
         end
       end
 
-      return try_plain_word_domains(content_uri)
+      return nil
     end
 
     # Direct routing - no "try" needed since we know the protocol
@@ -215,40 +213,4 @@ class ProtocolParser
     map
   end
 
-  def self.try_plain_word_domains(content_uri)
-    # Try to parse as plain word-domains registration (data:,word)
-    return nil unless content_uri.is_a?(String)
-    return nil unless DataUri.valid?(content_uri)
-
-    data_uri = DataUri.new(content_uri)
-    decoded_content = data_uri.decoded_data
-    return nil unless decoded_content.is_a?(String)
-
-    # For plain word-domains: must have blank mimetype and no parameters
-    # Also reject empty content (like 'data:,')
-    return nil if decoded_content.strip.empty?
-    mt = data_uri.mimetype.to_s
-    return nil unless (mt.empty? || mt == 'text/plain') && data_uri.parameters.empty?
-
-    # Special handling for plain word-domains
-    encoded = WordDomainsParser.validate_and_encode(
-      decoded_content: decoded_content,
-      operation: nil,  # No operation for plain text
-      params: {},
-      source: :plain,
-      ethscription_id: nil
-    )
-
-    return nil if encoded == DEFAULT_PARAMS
-
-    protocol, operation, encoded_data = encoded
-
-    {
-      type: :word_domains,
-      protocol: protocol,
-      operation: operation,
-      params: nil,
-      encoded_params: encoded_data
-    }
-  end
 end

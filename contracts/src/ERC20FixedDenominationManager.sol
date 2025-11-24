@@ -8,8 +8,6 @@ import "./libraries/Proxy.sol";
 import "./Ethscriptions.sol";
 import "./libraries/Predeploys.sol";
 import "./interfaces/IProtocolHandler.sol";
-import "./ERC721EthscriptionsCollection.sol";
-import "./ERC721EthscriptionsCollectionManager.sol";
 
 /// @title ERC20FixedDenominationManager
 /// @notice Manages ERC-20 tokens that move in a fixed denomination per mint/transfer lot.
@@ -28,7 +26,6 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         uint256 maxSupply;
         uint256 mintAmount;
         uint256 totalMinted;
-        address collectionContract;  // ERC-721 collection for this token's notes
     }
 
     struct TokenItem {
@@ -55,7 +52,6 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
 
     /// @dev Implementation contract used for proxy deployments
     address public constant tokenImplementation = Predeploys.ERC20_FIXED_DENOMINATION_IMPLEMENTATION;
-    address public constant collectionImplementation = Predeploys.ERC721_ETHSCRIPTIONS_COLLECTION_IMPLEMENTATION;
     address public constant ethscriptions = Predeploys.ETHSCRIPTIONS;
 
     string public constant protocolName = "erc-20-fixed-denomination";
@@ -68,8 +64,6 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
     mapping(bytes32 => string) internal deployToTick;  // deployEthscriptionId => tick
     mapping(bytes32 => TokenItem) internal tokenItems;
     mapping(bytes32 => mapping(uint256 => bytes32)) internal mintIds; // deploy inscription => mint id => ethscriptionId
-    mapping(address => bytes32) public collectionIdForAddress;  // collection address => deployEthscriptionId
-    mapping(bytes32 => address) public collectionAddressForId;  // deployEthscriptionId => collection address
 
     // =============================================================
     //                      CUSTOM ERRORS
@@ -102,12 +96,6 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         uint256 amount,
         uint256 mintId,
         bytes32 ethscriptionId
-    );
-
-    event ERC721CollectionDeployed(
-        bytes32 indexed deployEthscriptionId,
-        address indexed collectionAddress,
-        string tick
     );
 
     event ERC20FixedDenominationTokenTransferred(
@@ -148,34 +136,17 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         bytes32 erc20Salt = _getContractSalt(deployOp.tick, "erc20");
         Proxy tokenProxy = new Proxy{salt: erc20Salt}(address(this));
 
-        string memory name = deployOp.tick;
-        string memory symbol = deployOp.tick.upper();
-
         tokenProxy.upgradeToAndCall(tokenImplementation, abi.encodeWithSelector(
                 ERC20FixedDenomination.initialize.selector,
-                name,
-                symbol,
+                deployOp.tick,
+                deployOp.tick.upper(),
                 deployOp.maxSupply * 10**18,
+                deployOp.mintAmount,
                 ethscriptionId
             )
         );
-        
+
         tokenProxy.changeAdmin(Predeploys.PROXY_ADMIN);
-
-        // Deploy collection for this fixed denomination token
-        bytes32 erc721Salt = _getContractSalt(deployOp.tick, "erc721");
-        Proxy collectionProxy = new Proxy{salt: erc721Salt}(address(this));
-
-        bytes memory collectionInitCalldata = abi.encodeWithSelector(
-            ERC721EthscriptionsCollection.initialize.selector,
-            deployOp.tick,  // Collection name
-            deployOp.tick.upper(),  // Collection symbol
-            address(this),  // Manager owns the collection
-            ethscriptionId  // Collection ID is the deploy ethscription ID
-        );
-
-        collectionProxy.upgradeToAndCall(collectionImplementation, collectionInitCalldata);
-        collectionProxy.changeAdmin(Predeploys.PROXY_ADMIN);
 
         tokensByTick[deployOp.tick] = TokenInfo({
             tokenContract: address(tokenProxy),
@@ -183,15 +154,10 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
             tick: deployOp.tick,
             maxSupply: deployOp.maxSupply,
             mintAmount: deployOp.mintAmount,
-            totalMinted: 0,
-            collectionContract: address(collectionProxy)
+            totalMinted: 0
         });
 
         deployToTick[ethscriptionId] = deployOp.tick;
-
-        // Set up collection lookups
-        collectionIdForAddress[address(collectionProxy)] = ethscriptionId;
-        collectionAddressForId[ethscriptionId] = address(collectionProxy);
 
         emit ERC20FixedDenominationTokenDeployed(
             ethscriptionId,
@@ -199,12 +165,6 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
             deployOp.tick,
             deployOp.maxSupply,
             deployOp.mintAmount
-        );
-
-        emit ERC721CollectionDeployed(
-            ethscriptionId,
-            address(collectionProxy),
-            deployOp.tick
         );
     }
 
@@ -225,6 +185,7 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         Ethscriptions ethscriptionsContract = Ethscriptions(ethscriptions);
         Ethscriptions.Ethscription memory ethscription = ethscriptionsContract.getEthscription(ethscriptionId);
         address initialOwner = ethscription.initialOwner;
+        address recipient = initialOwner == address(0) ? ethscription.creator : initialOwner;
 
         tokenItems[ethscriptionId] = TokenItem({
             deployEthscriptionId: token.deployEthscriptionId,
@@ -233,16 +194,24 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         });
         mintIds[token.deployEthscriptionId][mintOp.id] = ethscriptionId;
 
-        ERC20FixedDenomination(token.tokenContract).mint(initialOwner, mintOp.amount * 10**18);
-        token.totalMinted += mintOp.amount;
+        // Mint ERC20 tokens and NFT with specific ID matching the mintId
+        ERC20FixedDenomination(token.tokenContract).mint({to: recipient, nftId: mintOp.id});
 
-        // Mint collection NFT with tokenId = mintId
-        ERC721EthscriptionsCollection(token.collectionContract).addMember(ethscriptionId, mintOp.id);
+        // If the initial owner is the null owner, mirror the ERC721 null-owner pattern:
+        // mint to creator, then move balances to address(0) (NFT will be burned via forceTransfer logic).
+        if (initialOwner == address(0)) {
+            ERC20FixedDenomination(token.tokenContract).forceTransfer({
+                from: recipient,
+                to: address(0),
+                nftId: mintOp.id
+            });
+        }
+        token.totalMinted += mintOp.amount;
 
         emit ERC20FixedDenominationTokenMinted(token.deployEthscriptionId, initialOwner, mintOp.amount, mintOp.id, ethscriptionId);
     }
 
-    /// @notice Mirrors ERC-20 balances when a mint inscription NFT transfers.
+    /// @notice Mirrors ERC-20 balances and NFT when a mint inscription NFT transfers.
     /// @param ethscriptionId The mint inscription hash being transferred.
     /// @param from The previous owner of the inscription NFT.
     /// @param to The new owner of the inscription NFT.
@@ -258,10 +227,8 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         string memory tick = deployToTick[item.deployEthscriptionId];
         TokenInfo storage token = tokensByTick[tick];
 
-        ERC20FixedDenomination(token.tokenContract).forceTransfer(from, to, item.amount * 10**18);
-
-        // Transfer collection NFT with tokenId = mintId
-        ERC721EthscriptionsCollection(token.collectionContract).forceTransfer(from, to, item.mintId);
+        // Transfer both ERC20 tokens and the specific NFT with the mintId
+        ERC20FixedDenomination(token.tokenContract).forceTransfer({from: from, to: to, nftId: item.mintId});
 
         emit ERC20FixedDenominationTokenTransferred(item.deployEthscriptionId, from, to, item.amount, item.mintId, ethscriptionId);
     }
@@ -298,16 +265,6 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         return Create2.computeAddress(erc20Salt, keccak256(creationCode), address(this));
     }
 
-    function predictCollectionAddressByTick(string memory tick) external view returns (address) {
-        if (tokensByTick[tick].collectionContract != address(0)) {
-            return tokensByTick[tick].collectionContract;
-        }
-
-        bytes32 erc721Salt = _getContractSalt(tick, "erc721");
-        bytes memory creationCode = abi.encodePacked(type(Proxy).creationCode, abi.encode(address(this)));
-        return Create2.computeAddress(erc721Salt, keccak256(creationCode), address(this));
-    }
-
     function isTokenItem(bytes32 ethscriptionId) external view returns (bool) {
         return tokenItems[ethscriptionId].deployEthscriptionId != bytes32(0);
     }
@@ -316,77 +273,8 @@ contract ERC20FixedDenominationManager is IProtocolHandler {
         return tokenItems[ethscriptionId];
     }
 
-    // =============================================================
-    //                  COLLECTION VIEW FUNCTIONS
-    // =============================================================
-
-    /// @notice Get collection metadata for a given collection address
-    /// @dev Called by ERC721EthscriptionsCollection.contractURI()
-    function getCollectionByAddress(address collectionAddress) external view returns (
-        ERC721EthscriptionsCollectionManager.CollectionMetadata memory
-    ) {
-        bytes32 deployId = collectionIdForAddress[collectionAddress];
-        require(deployId != bytes32(0), "Collection not found");
-
-        string memory tick = deployToTick[deployId];
-        TokenInfo memory token = tokensByTick[tick];
-
-        return ERC721EthscriptionsCollectionManager.CollectionMetadata({
-            collectionContract: collectionAddress,
-            locked: false,  // Fixed denomination collections are never locked
-            name: string.concat(token.tick, " ERC-721"),
-            symbol: string.concat(token.tick, "-ERC-721"),
-            maxSupply: token.maxSupply / token.mintAmount,  // Number of notes, not total tokens
-            description: string.concat("Fixed denomination notes for ", token.tick),
-            logoImageUri: "",
-            bannerImageUri: "",
-            backgroundColor: "",
-            websiteLink: "",
-            twitterLink: "",
-            discordLink: "",
-            merkleRoot: bytes32(0)
-        });
-    }
-
-    /// @notice Get collection item data for a specific tokenId
-    /// @dev Called by ERC721EthscriptionsCollection.tokenURI()
-    function getCollectionItem(bytes32 collectionId, uint256 tokenId) external view returns (
-        ERC721EthscriptionsCollectionManager.CollectionItem memory
-    ) {
-        // tokenId is the mintId for fixed denomination tokens
-        bytes32 ethscriptionId = mintIds[collectionId][tokenId];
-        require(ethscriptionId != bytes32(0), "Token does not exist");
-
-        TokenItem memory item = tokenItems[ethscriptionId];
-        string memory tick = deployToTick[collectionId];
-        TokenInfo memory token = tokensByTick[tick];
-
-        // Create attributes array
-        ERC721EthscriptionsCollectionManager.Attribute[] memory attributes =
-            new ERC721EthscriptionsCollectionManager.Attribute[](2);
-
-        attributes[0] = ERC721EthscriptionsCollectionManager.Attribute({
-            traitType: "Denomination",
-            value: LibString.toString(token.mintAmount)
-        });
-
-        attributes[1] = ERC721EthscriptionsCollectionManager.Attribute({
-            traitType: "Token",
-            value: token.tick
-        });
-
-        return ERC721EthscriptionsCollectionManager.CollectionItem({
-            itemIndex: tokenId,
-            name: string.concat(token.tick, " #", LibString.toString(tokenId)),
-            ethscriptionId: ethscriptionId,
-            backgroundColor: "",
-            description: string.concat(LibString.toString(token.mintAmount), " ", token.tick, " note"),
-            attributes: attributes
-        });
-    }
-
-    function getCollectionAddress(bytes32 deployEthscriptionId) external view returns (address) {
-        return collectionAddressForId[deployEthscriptionId];
+    function getMintEthscriptionId(bytes32 deployEthscriptionId, uint256 mintId) external view returns (bytes32) {
+        return mintIds[deployEthscriptionId][mintId];
     }
 
     // =============================================================

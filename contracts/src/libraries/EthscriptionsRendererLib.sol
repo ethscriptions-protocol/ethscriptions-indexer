@@ -44,6 +44,8 @@ library EthscriptionsRendererLib {
         string memory part2 = string.concat(
             '"},{"trait_type":"Content Hash","value":"',
             uint256(etsc.contentHash).toHexString(32),
+            '"},{"trait_type":"Content URI SHA","value":"',
+            uint256(etsc.contentUriSha).toHexString(32),
             '"},{"trait_type":"MIME Type","value":"',
             mimetype.escapeJSON(),
             '"},{"trait_type":"ESIP-6","value":"',
@@ -54,13 +56,13 @@ library EthscriptionsRendererLib {
         string memory protocolAttrs = "";
         if (bytes(protocolName).length > 0) {
             protocolAttrs = string.concat(
-                '"},{"trait_type":"Protocol","value":"',
+                '"},{"trait_type":"Protocol Name","value":"',
                 protocolName.escapeJSON()
             );
             if (bytes(operation).length > 0) {
                 protocolAttrs = string.concat(
                     protocolAttrs,
-                    '"},{"trait_type":"Operation","value":"',
+                    '"},{"trait_type":"Protocol Operation","value":"',
                     operation.escapeJSON()
                 );
             }

@@ -170,8 +170,8 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
 
         // Build the JSON metadata
         string memory jsonStart = string.concat(
-            '{"name":"', name(), ' Token #', mintId.toString(), '"',
-            ',"description":"Fixed denomination token for ', mintAmount().toString(), ' ', symbol(), ' tokens"'
+            '{"name":"', name().escapeJSON(), ' Token #', mintId.toString(), '"',
+            ',"description":"Fixed denomination token for ', mintAmount().toString(), ' ', symbol().escapeJSON(), ' tokens"'
         );
 
         // Add ethscription ID and number
@@ -189,5 +189,4 @@ contract ERC20FixedDenomination is ERC404NullOwnerCappedUpgradeable {
 
         return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
     }
-
 }

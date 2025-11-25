@@ -9,6 +9,8 @@ RSpec.describe "Header-Based Collections Protocol", type: :integration do
   let(:bob) { valid_address("bob") }
   let(:carol) { valid_address("carol") }
   let(:media_type) { 'image/png' }
+  let(:force_merkle_sender) { "0x0000000000000000000000000000000000000042" }
+  let(:zero_merkle_root) { '0x' + '0' * 64 }
 
   # Small "image" payloads live in the data URI body; protocol data lives in headers
   let(:items_manifest) do
@@ -133,7 +135,6 @@ RSpec.describe "Header-Based Collections Protocol", type: :integration do
       content_base64: forged_item[:base64_content]
     )
     # Use the hard-coded force-merkle sender so enforcement applies even in import mode
-    force_merkle_sender = "0x0000000000000000000000000000000000000042"
     forged_results = import_l1_block(
       [create_input(creator: force_merkle_sender, to: force_merkle_sender, data_uri: forged_uri)],
       esip_overrides: { esip6_is_enabled: true }
@@ -147,9 +148,254 @@ RSpec.describe "Header-Based Collections Protocol", type: :integration do
     expect(get_collection_state(collection_id)[:currentSize]).to eq(3)
   end
 
-  def metadata_payload(merkle_root:, initial_owner:)
+  context 'unhappy paths' do
+    describe 'content hash mismatch' do
+      it 'rejects when actual image differs from merkle leaf content' do
+        collection_id = create_header_collection(owner: alice, merkle_root: merkle_root)
+
+        # Use correct proof and metadata for items_manifest[1], but WRONG image content
+        tampered_content = Base64.strict_encode64("tampered-image-not-header-bob-image")
+
+        uri = header_data_uri(
+          op: 'add_self_to_collection',
+          payload: add_item_payload(collection_id, items_manifest[1], proofs[1]),
+          content_base64: tampered_content
+        )
+
+        results = import_l1_block(
+          [create_input(creator: force_merkle_sender, to: force_merkle_sender, data_uri: uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        expect_protocol_failure(results[:l2_receipts].first, /Invalid Merkle proof/i)
+      end
+    end
+
+    describe 'collection validation' do
+      it 'rejects add to non-existent collection' do
+        fake_collection_id = '0x' + 'dead' * 16
+
+        uri = header_data_uri(
+          op: 'add_self_to_collection',
+          payload: add_item_payload(fake_collection_id, items_manifest[1], proofs[1]),
+          content_base64: items_manifest[1][:base64_content]
+        )
+
+        results = import_l1_block(
+          [create_input(creator: force_merkle_sender, to: force_merkle_sender, data_uri: uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        expect_protocol_failure(results[:l2_receipts].first, /Collection does not exist/i)
+      end
+
+      it 'rejects add to locked collection' do
+        collection_id = create_header_collection(owner: alice, merkle_root: merkle_root)
+
+        # Lock the collection
+        lock_uri = json_data_uri({
+          "p" => "erc-721-ethscriptions-collection",
+          "op" => "lock_collection",
+          "collection_id" => collection_id
+        })
+        import_l1_block(
+          [create_input(creator: alice, to: alice, data_uri: lock_uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        # Verify collection is locked
+        expect(get_collection_state(collection_id)[:locked]).to eq(true)
+
+        # Try to add item - should fail
+        uri = header_data_uri(
+          op: 'add_self_to_collection',
+          payload: add_item_payload(collection_id, items_manifest[1], proofs[1]),
+          content_base64: items_manifest[1][:base64_content]
+        )
+
+        results = import_l1_block(
+          [create_input(creator: force_merkle_sender, to: force_merkle_sender, data_uri: uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        expect_protocol_failure(results[:l2_receipts].first, /Collection is locked/i)
+      end
+    end
+
+    describe 'supply limits' do
+      it 'rejects when exceeding max_supply' do
+        # Create collection with max_supply of 1 (item 0 already added via create_collection_and_add_self)
+        collection_id = create_header_collection(owner: alice, merkle_root: merkle_root, max_supply: "1")
+
+        # Collection already has 1 item (item 0), try to add item 1 - should fail
+        uri = header_data_uri(
+          op: 'add_self_to_collection',
+          payload: add_item_payload(collection_id, items_manifest[1], proofs[1]),
+          content_base64: items_manifest[1][:base64_content]
+        )
+
+        results = import_l1_block(
+          [create_input(creator: force_merkle_sender, to: force_merkle_sender, data_uri: uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        expect_protocol_failure(results[:l2_receipts].first, /Exceeds max supply/i)
+      end
+    end
+
+    describe 'item slot conflicts' do
+      it 'rejects duplicate item_index' do
+        collection_id = create_header_collection(owner: alice, merkle_root: merkle_root)
+
+        # Item 0 is already added via create_header_collection
+        # Try to add another item at index 0 (different content)
+        different_item_at_index_0 = {
+          item_index: 0,
+          name: "Different Item",
+          background_color: "#999999",
+          description: "Trying to overwrite slot 0",
+          attributes: [{"trait_type" => "Test", "value" => "Duplicate"}],
+          base64_content: Base64.strict_encode64("different-content-for-slot-0")
+        }
+
+        # Build a single-item merkle tree for this new item (so proof is valid)
+        single_plan = build_merkle_plan([different_item_at_index_0])
+
+        # First, we need to update collection's merkle root to accept this item
+        # Actually, let's just use the owner to bypass merkle - simpler test
+        uri = header_data_uri(
+          op: 'add_self_to_collection',
+          payload: add_item_payload(collection_id, different_item_at_index_0, []),
+          content_base64: different_item_at_index_0[:base64_content]
+        )
+
+        # Owner can bypass merkle, but slot is still taken
+        results = import_l1_block(
+          [create_input(creator: alice, to: alice, data_uri: uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        expect_protocol_failure(results[:l2_receipts].first, /Item slot taken/i)
+      end
+    end
+
+    describe 'merkle proof failures' do
+      it 'rejects with empty proof when merkle_root is set' do
+        collection_id = create_header_collection(owner: alice, merkle_root: merkle_root)
+
+        # Try to add with empty proof
+        uri = header_data_uri(
+          op: 'add_self_to_collection',
+          payload: add_item_payload(collection_id, items_manifest[1], []),  # Empty proof!
+          content_base64: items_manifest[1][:base64_content]
+        )
+
+        results = import_l1_block(
+          [create_input(creator: force_merkle_sender, to: force_merkle_sender, data_uri: uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        expect_protocol_failure(results[:l2_receipts].first, /Invalid Merkle proof/i)
+      end
+
+      it 'rejects with proof for different item_index' do
+        collection_id = create_header_collection(owner: alice, merkle_root: merkle_root)
+
+        # Use item 1's content but item 2's proof
+        uri = header_data_uri(
+          op: 'add_self_to_collection',
+          payload: add_item_payload(collection_id, items_manifest[1], proofs[2]),  # Wrong proof!
+          content_base64: items_manifest[1][:base64_content]
+        )
+
+        results = import_l1_block(
+          [create_input(creator: force_merkle_sender, to: force_merkle_sender, data_uri: uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        expect_protocol_failure(results[:l2_receipts].first, /Invalid Merkle proof/i)
+      end
+
+      it 'rejects when merkle_root is zero and non-owner tries with enforcement' do
+        # Create collection with zero merkle root
+        collection_id = create_header_collection(owner: alice, merkle_root: zero_merkle_root)
+
+        uri = header_data_uri(
+          op: 'add_self_to_collection',
+          payload: add_item_payload(collection_id, items_manifest[1], []),
+          content_base64: items_manifest[1][:base64_content]
+        )
+
+        # force_merkle_sender triggers enforcement, but merkle_root is 0 → "Merkle proof required"
+        results = import_l1_block(
+          [create_input(creator: force_merkle_sender, to: force_merkle_sender, data_uri: uri)],
+          esip_overrides: { esip6_is_enabled: true }
+        )
+
+        expect_protocol_failure(results[:l2_receipts].first, /Merkle proof required/i)
+      end
+    end
+  end
+
+  context 'owner privileges' do
+    it 'allows owner to add without proof even when merkle_root is set' do
+      collection_id = create_header_collection(owner: alice, merkle_root: merkle_root)
+
+      # Owner adds item 1 without a valid proof (empty proof)
+      uri = header_data_uri(
+        op: 'add_self_to_collection',
+        payload: add_item_payload(collection_id, items_manifest[1], []),  # No proof needed for owner
+        content_base64: items_manifest[1][:base64_content]
+      )
+
+      results = import_l1_block(
+        [create_input(creator: alice, to: alice, data_uri: uri)],
+        esip_overrides: { esip6_is_enabled: true }
+      )
+
+      receipt = results[:l2_receipts].first
+      events = ProtocolEventReader.parse_receipt_events(receipt)
+      expect(events.any? { |e| e[:event] == 'ProtocolHandlerSuccess' }).to eq(true)
+      expect(events.any? { |e| e[:event] == 'ItemsAdded' }).to eq(true)
+      expect(get_collection_state(collection_id)[:currentSize]).to eq(2)
+    end
+  end
+
+  # Helper methods for tests
+  def expect_protocol_failure(receipt, error_pattern)
+    events = ProtocolEventReader.parse_receipt_events(receipt)
+    failure = events.find { |e| e[:event] == 'ProtocolHandlerFailed' }
+    expect(failure).not_to be_nil, "Expected ProtocolHandlerFailed event but got: #{events.map { |e| e[:event] }}"
+    expect(failure[:reason].to_s).to match(error_pattern),
+      "Expected error matching #{error_pattern.inspect}, got: #{failure[:reason]}"
+  end
+
+  def create_header_collection(owner:, merkle_root:, max_supply: "4")
+    uri = header_data_uri(
+      op: 'create_collection_and_add_self',
+      payload: {
+        "metadata" => metadata_payload(merkle_root: merkle_root, initial_owner: owner).merge("max_supply" => max_supply),
+        "item" => item_payload(items_manifest[0], proofs[0])
+      },
+      content_base64: items_manifest[0][:base64_content]
+    )
+
+    results = import_l1_block(
+      [create_input(creator: owner, to: owner, data_uri: uri)],
+      esip_overrides: { esip6_is_enabled: true }
+    )
+# binding.irb
+    expect(results[:l2_receipts].first[:status]).to eq('0x1'), "Collection creation failed"
+    results[:ethscription_ids].first
+  end
+
+  def json_data_uri(hash)
+    "data:," + JSON.generate(hash)
+  end
+
+  def metadata_payload(merkle_root:, initial_owner:, name: nil)
     {
-      "name" => "Header Merkle Collection",
+      "name" => name || "Header Merkle Collection #{SecureRandom.hex(4)}",
       "symbol" => "HDR",
       "max_supply" => "4",
       "description" => "Header-based minting flow",

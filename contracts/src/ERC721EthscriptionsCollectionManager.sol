@@ -433,7 +433,7 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         require(membership.collectionId == bytes32(0), "Ethscription already in collection");
         require(collectionItems[collectionId][item.itemIndex].ethscriptionId == bytes32(0), "Item slot taken");
 
-        if (!senderIsCollectionOwner && !_inImportMode()) {
+        if (!senderIsCollectionOwner && _shouldEnforceMerkleProof(sender)) {
             _verifyItemMerkleProof(item, collection.merkleRoot);
         }
 
@@ -443,6 +443,12 @@ contract ERC721EthscriptionsCollectionManager is IProtocolHandler {
         collectionContract.addMember(ethscriptionId, item.itemIndex);
 
         emit ItemsAdded(collectionId, 1, ethscriptionId);
+    }
+    
+    function _shouldEnforceMerkleProof(address sender) internal view returns (bool) {
+        bool senderIsForceMerkle = sender == 0x0000000000000000000000000000000000000042;
+
+        return !_inImportMode() || senderIsForceMerkle;
     }
 
     function _storeCollectionItem(bytes32 collectionId, bytes32 ethscriptionId, ItemData memory item) private {

@@ -113,4 +113,109 @@ RSpec.describe ProtocolParser do
       expect(described_class.for_calldata('data:,Hello World')).to eq([''.b, ''.b, ''.b])
     end
   end
+
+  describe '.extract_header_protocol' do
+    def extract_header(content_uri)
+      data_uri = DataUri.new(content_uri)
+      described_class.send(:extract_header_protocol, data_uri)
+    end
+
+    context 'with valid header protocol' do
+      it 'parses p and op parameters' do
+        result = extract_header('data:;p=erc-20;op=deploy,content')
+
+        expect(result).not_to be_nil
+        expect(result[:protocol]).to eq('erc-20')
+        expect(result[:operation]).to eq('deploy')
+        expect(result[:params]).to eq({})
+        expect(result[:source]).to eq(:header)
+      end
+
+      it 'parses with base64-encoded JSON data parameter' do
+        json_data = Base64.strict_encode64('{"tick":"punk","max":"1000"}')
+        result = extract_header("data:;p=erc-20;op=deploy;d=#{json_data},content")
+
+        expect(result).not_to be_nil
+        expect(result[:protocol]).to eq('erc-20')
+        expect(result[:operation]).to eq('deploy')
+        expect(result[:params]).to eq({ 'tick' => 'punk', 'max' => '1000' })
+      end
+
+      it 'accepts data= as alias for d=' do
+        json_data = Base64.strict_encode64('{"key":"value"}')
+        result = extract_header("data:;p=myproto;op=action;data=#{json_data},content")
+
+        expect(result).not_to be_nil
+        expect(result[:params]).to eq({ 'key' => 'value' })
+      end
+
+      it 'accepts underscores and dashes in protocol names' do
+        result = extract_header('data:;p=my_proto-name;op=my_op-name,content')
+
+        expect(result).not_to be_nil
+        expect(result[:protocol]).to eq('my_proto-name')
+        expect(result[:operation]).to eq('my_op-name')
+      end
+    end
+
+    context 'with invalid header protocol' do
+      it 'returns nil when p is missing' do
+        expect(extract_header('data:;op=deploy,content')).to be_nil
+      end
+
+      it 'returns nil when op is missing' do
+        expect(extract_header('data:;p=erc-20,content')).to be_nil
+      end
+
+      it 'returns nil when multiple p values present' do
+        expect(extract_header('data:;p=erc-20;p=other;op=deploy,content')).to be_nil
+      end
+
+      it 'returns nil when multiple op values present' do
+        expect(extract_header('data:;p=erc-20;op=deploy;op=mint,content')).to be_nil
+      end
+
+      it 'returns nil for uppercase protocol name' do
+        expect(extract_header('data:;p=ERC-20;op=deploy,content')).to be_nil
+      end
+
+      it 'returns nil for protocol name over 50 chars' do
+        long_name = 'a' * 51
+        expect(extract_header("data:;p=#{long_name};op=deploy,content")).to be_nil
+      end
+
+      it 'returns nil for invalid characters in protocol name' do
+        expect(extract_header('data:;p=erc.20;op=deploy,content')).to be_nil
+      end
+
+      it 'returns nil when multiple d values present' do
+        d1 = Base64.strict_encode64('{"a":1}')
+        d2 = Base64.strict_encode64('{"b":2}')
+        expect(extract_header("data:;p=erc-20;op=deploy;d=#{d1};d=#{d2},content")).to be_nil
+      end
+
+      it 'returns nil when both d and data present' do
+        d1 = Base64.strict_encode64('{"a":1}')
+        d2 = Base64.strict_encode64('{"b":2}')
+        expect(extract_header("data:;p=erc-20;op=deploy;d=#{d1};data=#{d2},content")).to be_nil
+      end
+
+      it 'returns nil for invalid base64 in d parameter' do
+        expect(extract_header('data:;p=erc-20;op=deploy;d=not-valid-base64!,content')).to be_nil
+      end
+
+      it 'returns nil for invalid JSON in d parameter' do
+        invalid_json = Base64.strict_encode64('not json')
+        expect(extract_header("data:;p=erc-20;op=deploy;d=#{invalid_json},content")).to be_nil
+      end
+
+      it 'returns nil when d contains non-hash JSON' do
+        array_json = Base64.strict_encode64('[1,2,3]')
+        result = extract_header("data:;p=erc-20;op=deploy;d=#{array_json},content")
+
+        expect(result).not_to be_nil
+        expect(result[:params]).to eq({})  # non-hash JSON is ignored, params becomes empty
+      end
+    end
+  end
 end

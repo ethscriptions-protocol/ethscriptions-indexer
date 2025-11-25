@@ -208,7 +208,6 @@ RSpec.describe Erc721EthscriptionsCollectionParser do
       expect(results[:l2_receipts].first[:status]).to eq('0x1'), "L2 transaction should succeed"
 
       # Parse events to verify collection creation and item addition
-      require_relative '../../lib/protocol_event_reader'
       events = ProtocolEventReader.parse_receipt_events(results[:l2_receipts].first)
 
       # Should have CollectionCreated event

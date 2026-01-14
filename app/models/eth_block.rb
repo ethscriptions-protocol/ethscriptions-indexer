@@ -226,5 +226,72 @@ class EthBlock < ApplicationRecord
   
     (max_db_block + 1..max_db_block + n).to_a
   end
-  
+
+  def generate_attestation_hash
+    hash = Digest::SHA256.new
+
+    self.parent_state_hash = EthBlock.where(block_number: block_number - 1).
+      limit(1).pluck(:state_hash).first
+
+    hash << parent_state_hash.to_s
+
+    hash << hashable_attributes.map do |attr|
+      send(attr)
+    end.to_json
+
+    associations_to_hash.each do |association|
+      hashable_attributes = quoted_hashable_attributes(association.klass)
+      records = association_scope(association).pluck(*hashable_attributes)
+
+      hash << records.to_json
+    end
+
+    self.state_hash = "0x" + hash.hexdigest
+  end
+
+  delegate :quoted_hashable_attributes, :associations_to_hash, to: :class
+
+  def hashable_attributes
+    self.class.hashable_attributes(self.class)
+  end
+
+  def check_attestation_hash
+    current_hash = state_hash
+
+    current_hash == generate_attestation_hash &&
+    parent_state_hash == EthBlock.find_by(block_number: block_number - 1)&.generate_attestation_hash
+  ensure
+    self.state_hash = current_hash
+  end
+
+  def association_scope(association)
+    association.klass.oldest_first.where(block_number: block_number)
+  end
+
+  def self.associations_to_hash
+    reflect_on_all_associations(:has_many).sort_by(&:name)
+  end
+
+  def self.all_hashable_attrs
+    classes = [self, associations_to_hash.map(&:klass)].flatten
+
+    classes.map(&:column_names).flatten.uniq.sort - [
+      'state_hash',
+      'parent_state_hash',
+      'id',
+      'created_at',
+      'updated_at',
+      'imported_at'
+    ]
+  end
+
+  def self.hashable_attributes(klass)
+    (all_hashable_attrs & klass.column_names).sort
+  end
+
+  def self.quoted_hashable_attributes(klass)
+    hashable_attributes(klass).map do |attr|
+      Arel.sql("encode(digest(#{klass.connection.quote_column_name(attr)}::text, 'sha256'), 'hex')")
+    end
+  end
 end

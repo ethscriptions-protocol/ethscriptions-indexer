@@ -1,11 +1,12 @@
 module EthscriptionTestHelper
   def self.create_from_hash(hash)
-    resp = AlchemyClient.query_api(
+    client = EthBlock.rpc_client
+    resp = client.send(:query_api,
       method: 'eth_getTransactionByHash',
       params: [hash]
     )['result']
-    
-    resp2 = AlchemyClient.query_api(
+
+    resp2 = client.send(:query_api,
       method: 'eth_getTransactionReceipt',
       params: [hash]
     )['result']

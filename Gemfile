@@ -6,7 +6,7 @@ ruby "3.2.2"
 gem "rails", "~> 7.1.2"
 
 # Use postgresql as the database for Active Record
-gem "pg", "~> 1.1"
+gem "pg", "1.6.2"
 
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
@@ -76,9 +76,13 @@ gem "httparty", "~> 0.21.0"
 
 gem "order_query", "~> 0.5.3"
 
-gem 'facet_rails_common', git: 'https://github.com/0xfacet/facet_rails_common.git'
+gem 'facet_rails_common', git: 'https://github.com/0xfacet/facet_rails_common.git', ref: 'lenient_base64'
 
 gem "cbor", "~> 0.5.9"
+
+gem "net-http-persistent", "~> 4.0"
+
+gem "concurrent-ruby", "~> 1.2"
 
 gem 'rswag-api'
 

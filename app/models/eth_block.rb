@@ -19,7 +19,9 @@ class EthBlock < ApplicationRecord
       primary_key: :block_number,
       inverse_of: :eth_block
   end
-  
+
+  before_validation :generate_attestation_hash, if: -> { imported_at.present? }
+
   def self.rpc_client
     @_rpc_client ||= PooledRpcClient.new(
       base_url: ENV.fetch('ETHEREUM_CLIENT_BASE_URL'),

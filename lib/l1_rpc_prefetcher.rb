@@ -133,20 +133,14 @@ class L1RpcPrefetcher
   end
 
   def fetch_job(block_number)
-    t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
     block_response = @eth.get_block(block_number)
-    t1 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     # Handle case where block doesn't exist yet
     if block_response.nil? || block_response.dig('result', 'hash').nil?
-      Rails.logger.debug "[PREFETCH] Block #{block_number} not yet available"
       return :not_ready
     end
 
     receipts_response = @eth.get_transaction_receipts(block_number)
-    t2 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
     receipts = receipts_response.dig('result', 'receipts')
     result = block_response['result']
     tx_count = result['transactions'].size
@@ -162,7 +156,6 @@ class L1RpcPrefetcher
       return :not_ready
     end
 
-    # Build and filter transactions in background thread
     block_timestamp = result['timestamp'].to_i(16)
     block_blockhash = result['hash']
 
@@ -173,15 +166,6 @@ class L1RpcPrefetcher
       transactions: result['transactions'],
       receipts: receipts
     )
-    t3 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
-    tx_count = result['transactions'].size
-    rpc_time = ((t2 - t0) * 1000).round
-    filter_time = ((t3 - t2) * 1000).round
-
-    if rpc_time > 300 || filter_time > 50
-      Rails.logger.debug "[PREFETCH] Block #{block_number}: #{tx_count} txs, RPC=#{rpc_time}ms, filter=#{filter_time}ms"
-    end
 
     {
       block_number: block_number,

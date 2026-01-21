@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Logs
+log/*
+tmp/*
+
+# Local dev files
+.env*
+!.env.example
+.ruby-version
+.ruby-gemset
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+spec/
+coverage/
+
+# Documentation
+*.md
+!README.md
+
+# Build artifacts
+vendor/bundle
+
+# Heroku/deployment
+*.dump
+
+# Scripts (not needed in image)
+script/
+
+# Rails credentials (not used)
+config/master.key
+config/credentials.yml.enc
+config/credentials/
+
+# TLS certificates (passed via metadata, not baked in image)
+certs/
+*.key
+*.crt
+*.pem
+
+scratch/

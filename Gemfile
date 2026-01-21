@@ -50,27 +50,21 @@ gem "httpparty", "~> 0.2.0"
 
 gem "clockwork", "~> 3.0"
 
-gem "dalli", "~> 3.2"
-
 gem "kaminari", "~> 1.2"
 
 gem "airbrake", "~> 13.0"
 
 gem "rack-cors", "~> 2.0"
 
-gem "eth", "~> 0.5.11"
+gem "eth", github: "0xFacet/eth.rb"
 
 gem "activerecord-import", "~> 1.5"
-
-gem "scout_apm", "~> 5.3"
 
 gem "memoist", "~> 0.16.2"
 
 gem "awesome_print", "~> 1.9"
 
 gem "clipboard"
-
-gem "redis", "~> 5.0"
 
 gem "httparty", "~> 0.21.0"
 

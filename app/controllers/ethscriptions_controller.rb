@@ -63,7 +63,7 @@ class EthscriptionsController < ApplicationController
     results_limit = if transaction_hash_only
       1000
     elsif include_latest_transfer
-      50
+      100 # Having a different limit here leads to unexpected results for callers.
     else
       100
     end

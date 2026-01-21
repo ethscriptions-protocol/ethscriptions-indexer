@@ -1,0 +1,12 @@
+{$CADDY_HOSTS} {
+    tls /etc/caddy/certs/origin.crt /etc/caddy/certs/origin.key
+
+    reverse_proxy web:3000 {
+        header_up X-Forwarded-Proto https
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}

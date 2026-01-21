@@ -31,3 +31,9 @@
 
 # Ignore master key for decrypting credentials and more.
 /config/master.key
+
+certs/
+
+*.dump
+scratch/
+.DS_Store

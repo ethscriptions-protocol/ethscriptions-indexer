@@ -29,12 +29,18 @@ Rails.application.configure do
   # config.action_dispatch.x_sendfile_header = "X-Sendfile" # for Apache
   # config.action_dispatch.x_sendfile_header = "X-Accel-Redirect" # for NGINX
 
-  # Assume all access to the app is happening through a SSL-terminating reverse proxy.
-  # Can be used together with config.force_ssl for Strict-Transport-Security and secure cookies.
-  # config.assume_ssl = true
-
-  # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
-  config.force_ssl = true
+  # SSL configuration
+  # When behind a TLS-terminating proxy (Caddy), use assume_ssl for secure cookies without redirects
+  # When directly exposed, use force_ssl for redirects + secure cookies
+  if ENV['DISABLE_SSL'] == 'true'
+    # No SSL at all (local dev)
+  elsif ENV['ASSUME_SSL'] == 'true'
+    # Behind TLS proxy (Caddy) - secure cookies but no redirect
+    config.assume_ssl = true
+  else
+    # Direct SSL termination - redirect HTTP to HTTPS
+    config.force_ssl = true
+  end
 
   # Log to STDOUT by default
   config.logger = ActiveSupport::Logger.new(STDOUT)
@@ -50,16 +56,7 @@ Rails.application.configure do
   config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
 
   # Use a different cache store in production.
-  config.cache_store = :mem_cache_store,
-  (ENV["MEMCACHIER_SERVERS"] || "").split(","),
-  {:username => ENV["MEMCACHIER_USERNAME"],
-   :password => ENV["MEMCACHIER_PASSWORD"],
-   :failover => true,
-   :socket_timeout => 1.5,
-   :socket_failure_delay => 0.2,
-   :down_retry_delay => 60,
-   compress: true
-  }
+  config.cache_store = :memory_store, { size: 67108864 }
 
   # Use a real queuing backend for Active Job (and separate queues per environment).
   # config.active_job.queue_adapter = :resque

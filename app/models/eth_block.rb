@@ -19,18 +19,23 @@ class EthBlock < ApplicationRecord
       primary_key: :block_number,
       inverse_of: :eth_block
   end
-  
+
   before_validation :generate_attestation_hash, if: -> { imported_at.present? }
-    
-  def self.ethereum_client
-    @_ethereum_client ||= begin
-      client_class = ENV.fetch('ETHEREUM_CLIENT_CLASS', 'AlchemyClient').constantize
-      
-      client_class.new(
-        api_key: ENV['ETHEREUM_CLIENT_API_KEY'],
-        base_url: ENV.fetch('ETHEREUM_CLIENT_BASE_URL')
-      )
-    end
+
+  def self.rpc_client
+    @_rpc_client ||= PooledRpcClient.new(
+      base_url: ENV.fetch('ETHEREUM_CLIENT_BASE_URL'),
+      api_key: ENV['ETHEREUM_CLIENT_API_KEY']
+    )
+  end
+
+  def self.prefetcher
+    @_prefetcher ||= L1RpcPrefetcher.new(ethereum_client: rpc_client)
+  end
+
+  def self.reset_prefetcher!
+    @_prefetcher&.shutdown
+    @_prefetcher = nil
   end
   
   def self.beacon_client
@@ -65,81 +70,47 @@ class EthBlock < ApplicationRecord
     (cached_global_block_number - next_block_to_import) + 1
   end
   
-  def self.import_batch_size
-    [blocks_behind, ENV.fetch('BLOCK_IMPORT_BATCH_SIZE', 2).to_i].min
-  end
-  
   def self.import_blocks_until_done
+    blocks_imported = 0
+    start_time = Time.current
+    total_ethscriptions = 0
+
     loop do
       begin
-        block_numbers = EthBlock.next_blocks_to_import(import_batch_size)
-        
-        if block_numbers.blank?
-          raise BlockNotReadyToImportError.new("Block not ready")
+        block_number = next_block_to_import
+        raise BlockNotReadyToImportError.new("No block to import") if block_number.nil?
+
+        response = prefetcher.fetch(block_number)
+        result = import_block(
+          block_number,
+          response[:block_response],
+          response[:relevant_transactions]
+        )
+
+        total_ethscriptions += result.ethscriptions_imported
+        blocks_imported += 1
+        prefetcher.clear_older_than(block_number - 10)
+
+        if blocks_imported % 100 == 0
+          elapsed = Time.current - start_time
+          rate = (blocks_imported / elapsed).round(1)
+          stats = prefetcher.stats
+          puts "Imported #{blocks_imported} blocks (#{rate} bl/s) | #{total_ethscriptions} ethscriptions | Prefetcher: #{stats[:fulfilled]}/#{stats[:fulfilled] + stats[:pending]} ready"
         end
-        
-        EthBlock.import_blocks(block_numbers)
-      rescue BlockNotReadyToImportError => e
+
+      rescue BlockNotReadyToImportError, L1RpcPrefetcher::BlockFetchError => e
         puts "#{e.message}. Stopping import."
         break
       end
     end
   end
-  
-  def self.import_next_block
-    next_block_to_import.tap do |block|
-      import_blocks([block])
-    end
-  end
-  
-  def self.import_blocks(block_numbers)
-    logger.info "Block Importer: importing blocks #{block_numbers.join(', ')}"
-    start = Time.current
-    _blocks_behind = blocks_behind
-    
-    block_by_number_promises = block_numbers.map do |block_number|
-      Concurrent::Promise.execute do
-        [block_number, ethereum_client.get_block(block_number)]
-      end
-    end
-    
-    receipts_promises = block_numbers.map do |block_number|
-      Concurrent::Promise.execute do
-        [
-          block_number,
-          ethereum_client.get_transaction_receipts(
-            block_number,
-            blocks_behind: _blocks_behind
-          )
-        ]
-      end
-    end
-    
-    block_by_number_responses = block_by_number_promises.map(&:value!).sort_by(&:first)
-    receipts_responses = receipts_promises.map(&:value!).sort_by(&:first)
-    
-    res = []
-    
-    block_by_number_responses.zip(receipts_responses).each do |(block_number1, block_by_number_response), (block_number2, receipts_response)|
-      raise "Mismatched block numbers: #{block_number1} and #{block_number2}" unless block_number1 == block_number2
-      res << import_block(block_number1, block_by_number_response, receipts_response)
-    end
-    
-    blocks_per_second = (block_numbers.length / (Time.current - start)).round(2)
-    puts "Imported #{res.map(&:ethscriptions_imported).sum} ethscriptions"
-    puts "Imported #{block_numbers.length} blocks. #{blocks_per_second} blocks / s"
-    
-    block_numbers
-  end
-  
-  def self.import_block(block_number, block_by_number_response, receipts_response)
-    ActiveRecord::Base.transaction do
-      validate_ready_to_import!(block_by_number_response, receipts_response)
 
+  def self.import_block(block_number, block_by_number_response, relevant_transactions)
+    ActiveRecord::Base.transaction do
       result = block_by_number_response['result']
-      
+
       parent_block = EthBlock.find_by(block_number: block_number - 1)
-      
+
       if (block_number > genesis_blocks.max) && parent_block.blockhash != result['parentHash']
         Airbrake.notify("
           Reorg detected: #{block_number},
@@ -147,12 +118,15 @@ class EthBlock < ApplicationRecord
           #{result['parentHash']},
           Deleting block(s): #{EthBlock.where("block_number >= ?", parent_block.block_number).pluck(:block_number).join(', ')}
         ")
-        
+
         EthBlock.where("block_number >= ?", parent_block.block_number).delete_all
-        
+
+        # Clear prefetcher cache - it has stale data from the old chain
+        reset_prefetcher!
+
         return OpenStruct.new(ethscriptions_imported: 0)
       end
-      
+
       block_record = create!(
         block_number: block_number,
         blockhash: result['hash'],
@@ -161,59 +135,26 @@ class EthBlock < ApplicationRecord
         timestamp: result['timestamp'].to_i(16),
         is_genesis_block: genesis_blocks.include?(block_number)
       )
-      
-      receipts = receipts_response['result']['receipts']
-      
-      tx_record_instances = result['transactions'].map do |tx|
-        current_receipt = receipts.detect { |receipt| receipt['transactionHash'] == tx['hash'] }
-        
-        gas_price = current_receipt['effectiveGasPrice'].to_i(16).to_d
-        gas_used = current_receipt['gasUsed'].to_i(16).to_d
-        transaction_fee = gas_price * gas_used
-        
-        EthTransaction.new(
-          block_number: block_record.block_number,
-          block_timestamp: block_record.timestamp,
-          block_blockhash: block_record.blockhash,
-          transaction_hash: tx['hash'],
-          from_address: tx['from'],
-          to_address: tx['to'],
-          created_contract_address: current_receipt['contractAddress'],
-          transaction_index: tx['transactionIndex'].to_i(16),
-          input: tx['input'],
-          status: current_receipt['status']&.to_i(16),
-          logs: current_receipt['logs'],
-          gas_price: gas_price,
-          gas_used: gas_used,
-          transaction_fee: transaction_fee,
-          value: tx['value'].to_i(16).to_d,
-          blob_versioned_hashes: tx['blobVersionedHashes'].presence || []
-        )
-      end
-      
-      possibly_relevant = tx_record_instances.select(&:possibly_relevant?)
-      
-      if possibly_relevant.present?
-        EthTransaction.import!(possibly_relevant)
-        
+
+      ethscriptions_imported = 0
+
+      if relevant_transactions.present?
+        EthTransaction.import!(relevant_transactions)
+
         eth_transactions = EthTransaction.where(block_number: block_number).order(transaction_index: :asc)
-        
         eth_transactions.each(&:process!)
-        
+
         ethscriptions_imported = eth_transactions.map(&:ethscription).compact.size
       end
-      
+
       EthTransaction.prune_transactions(block_number)
-      
       Token.process_block(block_record)
-      
       block_record.create_attachments_for_previous_block
-      
       block_record.update!(imported_at: Time.current)
-      
+
       puts "Block Importer: imported block #{block_number}"
-      
-      OpenStruct.new(ethscriptions_imported: ethscriptions_imported.to_i)
+
+      OpenStruct.new(ethscriptions_imported: ethscriptions_imported)
     end
   rescue ActiveRecord::RecordNotUnique => e
     if e.message.include?("eth_blocks") && e.message.include?("block_number")
@@ -261,25 +202,13 @@ class EthBlock < ApplicationRecord
   end
   
   def self.uncached_global_block_number
-    ethereum_client.get_block_number.tap do |block_number|
+    rpc_client.get_block_number.tap do |block_number|
       Rails.cache.write('global_block_number', block_number, expires_in: 1.second)
     end
   end
   
   def self.cached_global_block_number
     Rails.cache.read('global_block_number') || uncached_global_block_number
-  end
-  
-  def self.validate_ready_to_import!(block_by_number_response, receipts_response)
-    is_ready = block_by_number_response.present? &&
-      block_by_number_response.dig('result', 'hash').present? &&
-      receipts_response.present? &&
-      receipts_response.dig('error', 'code') != -32600 &&
-      receipts_response.dig('error', 'message') != "Block being processed - please try again later"
-    
-    unless is_ready
-      raise BlockNotReadyToImportError.new("Block not ready")
-    end
   end
   
   def self.next_block_to_import
@@ -299,15 +228,15 @@ class EthBlock < ApplicationRecord
   
     (max_db_block + 1..max_db_block + n).to_a
   end
-  
+
   def generate_attestation_hash
     hash = Digest::SHA256.new
-    
+
     self.parent_state_hash = EthBlock.where(block_number: block_number - 1).
       limit(1).pluck(:state_hash).first
-    
+
     hash << parent_state_hash.to_s
-    
+
     hash << hashable_attributes.map do |attr|
       send(attr)
     end.to_json
@@ -321,16 +250,16 @@ class EthBlock < ApplicationRecord
 
     self.state_hash = "0x" + hash.hexdigest
   end
-  
+
   delegate :quoted_hashable_attributes, :associations_to_hash, to: :class
 
   def hashable_attributes
     self.class.hashable_attributes(self.class)
   end
-  
+
   def check_attestation_hash
     current_hash = state_hash
-    
+
     current_hash == generate_attestation_hash &&
     parent_state_hash == EthBlock.find_by(block_number: block_number - 1)&.generate_attestation_hash
   ensure
@@ -344,10 +273,10 @@ class EthBlock < ApplicationRecord
   def self.associations_to_hash
     reflect_on_all_associations(:has_many).sort_by(&:name)
   end
-  
+
   def self.all_hashable_attrs
     classes = [self, associations_to_hash.map(&:klass)].flatten
-    
+
     classes.map(&:column_names).flatten.uniq.sort - [
       'state_hash',
       'parent_state_hash',
@@ -357,7 +286,7 @@ class EthBlock < ApplicationRecord
       'imported_at'
     ]
   end
-  
+
   def self.hashable_attributes(klass)
     (all_hashable_attrs & klass.column_names).sort
   end

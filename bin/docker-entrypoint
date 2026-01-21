@@ -1,0 +1,13 @@
+#!/bin/bash -e
+
+# Ensure tmp directories exist
+mkdir -p tmp/pids tmp/cache tmp/sockets
+
+# Only run db:prepare if explicitly enabled (opt-in for safety)
+# Set DB_PREPARE=true for local dev; production runs migrations separately
+if [[ "$*" == *"puma"* ]] && [ "${DB_PREPARE}" == "true" ]; then
+  echo "Preparing database..."
+  ./bin/rails db:prepare
+fi
+
+exec "${@}"
